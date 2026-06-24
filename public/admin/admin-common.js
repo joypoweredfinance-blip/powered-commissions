@@ -14,7 +14,7 @@ const NAV_ITEMS = [
   { href: '/admin/settings.html', label: '⚙️ Commission Rules' },
   { href: '/admin/installers.html', label: '🏗️ Installers & Financiers' },
   { href: '/admin/admins.html', label: '🔐 Admins', superAdminOnly: true },
-  { href: '/admin/audit.html', label: '🕓 Audit Log' }
+  { href: '/admin/audit.html', label: '🕓 Audit Log', superAdminOnly: true }
 ];
 
 function injectFavicon() {

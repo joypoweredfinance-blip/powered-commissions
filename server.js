@@ -30,8 +30,6 @@ require('./config/passport');
 app.use(passport.initialize());
 app.use(passport.session());
 
-app.use(express.static(path.join(__dirname, 'public')));
-
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/deals', requireRole('admin', 'super_admin'), require('./routes/deals'));
 app.use('/api/meta', requireRole('admin', 'super_admin'), require('./routes/meta'));
@@ -43,16 +41,17 @@ app.use('/api/settings', requireRole('admin', 'super_admin'), require('./routes/
 app.use('/api/advances', requireRole('admin', 'super_admin'), require('./routes/advances'));
 app.use('/api/clawbacks', requireRole('admin', 'super_admin'), require('./routes/clawbacks'));
 app.use('/api/referrals', requireRole('admin', 'super_admin'), require('./routes/referrals'));
-app.use('/api/audit', requireRole('admin', 'super_admin'), require('./routes/audit'));
+app.use('/api/audit', requireRole('super_admin'), require('./routes/audit'));
 app.use('/api/dashboard', requireRole('admin', 'super_admin'), require('./routes/dashboard'));
 app.use('/api/admins', requireRole('super_admin'), require('./routes/admins'));
 app.use('/api/myjobs', requireRole('sales_rep'), require('./routes/myjobs'));
 app.use('/api/mypayroll', requireRole('payroll_staff'), require('./routes/mypayroll'));
 
-for (const page of ['board', 'deal', 'dashboard', 'reps', 'rep-dashboard', 'payroll-staff', 'staff-dashboard', 'installers', 'settings', 'advances', 'clawbacks', 'audit', 'referrals']) {
+for (const page of ['board', 'deal', 'dashboard', 'reps', 'rep-dashboard', 'payroll-staff', 'staff-dashboard', 'installers', 'settings', 'advances', 'clawbacks', 'referrals']) {
   app.get(`/admin/${page}.html`, guardPage(`admin/${page}.html`, 'admin', 'super_admin'));
 }
 app.get('/admin/admins.html', guardPage('admin/admins.html', 'super_admin'));
+app.get('/admin/audit.html', guardPage('admin/audit.html', 'super_admin'));
 for (const page of ['dashboard', 'jobs', 'job', 'commissions', 'profile']) {
   app.get(`/rep/${page}.html`, guardPage(`rep/${page}.html`, 'sales_rep'));
 }
@@ -69,6 +68,11 @@ app.get('/change-password.html', (req, res) => {
   if (!req.isAuthenticated()) return res.redirect('/login.html');
   res.sendFile(path.join(__dirname, 'public', 'change-password.html'));
 });
+
+// Static assets (CSS/JS/SVG/login page, etc.) — registered LAST so it never has a chance to
+// serve a protected .html page directly. Every protected page above is matched by its own
+// guarded route first; this only ever serves what nothing above already claimed.
+app.use(express.static(path.join(__dirname, 'public')));
 
 async function start() {
   await initDatabase();

@@ -217,6 +217,11 @@ function renderFull() {
         </div>
 
         <div class="card" style="margin-bottom:20px;">
+          <p class="section-title">Funds Received <span style="font-weight:400; text-transform:none; font-size:12px;">— money POWERED actually receives from the installer</span></p>
+          <div id="fundsReceivedBox"></div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px;">
           <p class="section-title">Approval Gate</p>
           <div id="approvalBox"></div>
         </div>
@@ -243,6 +248,7 @@ function renderFull() {
   populateFields();
   renderAdders();
   renderCalc();
+  renderFundsReceived();
   renderApproval();
   renderPayment();
   renderAudit();
@@ -347,6 +353,7 @@ function renderCalc() {
     html += `<div class="error-msg show" style="margin-bottom:14px;">Below the pay-scale hard floor — needs manual approval before any commission is paid.</div>`;
   }
   html += calcRow('Net PPW', d.net_ppw ?? '—');
+  html += calcRow('Gross', fmtMoney(d.gross_amount));
   html += calcRow('Pay Scale Rate', d.pay_scale_rate ? `$${d.pay_scale_rate}/kW` : '—');
   html += calcRow('Rep Pool', fmtMoney(d.rep_pool));
   html += calcRow('Closer Pay (gross)', fmtMoney(d.closer_pay_gross));
@@ -358,6 +365,42 @@ function renderCalc() {
   }
   document.getElementById('calcLines').innerHTML = html;
   document.getElementById('overrideBtn').textContent = d.manual_override ? 'Edit Override' : 'Manual Override';
+  renderFundsReceived();
+}
+
+function renderFundsReceived() {
+  const d = DEAL;
+  const totalReceived = (d.funds_received_m1 || 0) + (d.funds_received_m2 || 0);
+  document.getElementById('fundsReceivedBox').innerHTML = `
+    <div class="calc-line"><span class="lbl">Expected M1</span><span class="val">${fmtMoney(d.expected_m1_amount)}</span></div>
+    <div class="field-row" style="margin:6px 0 14px;">
+      <div><label>Received M1 ($)</label><input type="number" step="0.01" id="fr_m1_amount" value="${d.funds_received_m1 ?? ''}"></div>
+      <div><label>Date Received</label><input type="date" id="fr_m1_date" value="${(d.funds_received_m1_date || '').slice(0, 10)}"></div>
+    </div>
+    <div class="calc-line"><span class="lbl">Expected M2</span><span class="val">${fmtMoney(d.expected_m2_amount)}</span></div>
+    <div class="field-row" style="margin:6px 0 14px;">
+      <div><label>Received M2 ($)</label><input type="number" step="0.01" id="fr_m2_amount" value="${d.funds_received_m2 ?? ''}"></div>
+      <div><label>Date Received</label><input type="date" id="fr_m2_date" value="${(d.funds_received_m2_date || '').slice(0, 10)}"></div>
+    </div>
+    <div class="calc-line total"><span class="lbl">Total Received</span><span class="val">${fmtMoney(totalReceived)}</span></div>
+    <button class="btn secondary small" id="saveFundsBtn" style="width:auto; margin-top:10px;">Save Funds Received</button>
+  `;
+  document.getElementById('saveFundsBtn').addEventListener('click', async (e) => {
+    const btn = e.target;
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    try {
+      DEAL = await api('PUT', `/api/deals/${dealId}`, {
+        funds_received_m1: parseFloat(val('fr_m1_amount')) || null,
+        funds_received_m1_date: val('fr_m1_date') || null,
+        funds_received_m2: parseFloat(val('fr_m2_amount')) || null,
+        funds_received_m2_date: val('fr_m2_date') || null
+      });
+      renderFundsReceived();
+    } catch (err) { alert(err.message); }
+    btn.disabled = false;
+    btn.textContent = 'Save Funds Received';
+  });
 }
 
 function renderApproval() {

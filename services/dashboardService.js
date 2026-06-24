@@ -16,9 +16,27 @@ function lastNMonths(n) {
   return months;
 }
 
-async function getOverallDashboard() {
+function weeksInMonth(monthStr) {
+  const [y, m] = monthStr.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const weeks = [];
+  for (let start = 1; start <= daysInMonth; start += 7) {
+    const end = Math.min(start + 6, daysInMonth);
+    weeks.push({
+      label: `${m}/${start}-${end}`,
+      startDate: `${monthStr}-${String(start).padStart(2, '0')}`,
+      endDate: `${monthStr}-${String(end).padStart(2, '0')}`
+    });
+  }
+  return weeks;
+}
+
+async function getOverallDashboard({ statusIds, month } = {}) {
   const thisMonth = monthKey(new Date().toISOString());
   const thisYear = String(new Date().getFullYear());
+  const statusIdsArr = statusIds === undefined || statusIds === null ? [] : (Array.isArray(statusIds) ? statusIds : [statusIds]);
+  const statusIdList = statusIdsArr.map(Number).filter((n) => !isNaN(n));
+  const statusFilterSql = statusIdList.length ? ` AND d.status_id IN (${statusIdList.join(',')})` : '';
 
   const activeDeals = await get(`
     SELECT COUNT(*) c FROM deals d LEFT JOIN deal_statuses ds ON ds.id = d.status_id
@@ -30,13 +48,14 @@ async function getOverallDashboard() {
     SELECT d.id, d.closer_rep_id, d.setter_rep_id, d.closer_pay_net, d.setter_pay,
            d.closer_paid, d.closer_paid_date, d.setter_paid, d.setter_paid_date,
            d.closer_breakdown_approved, d.setter_breakdown_approved,
-           d.m1_paid_date, d.net_ppw,
-           cr.full_name as closer_name, cr.display_name as closer_display,
-           sr.full_name as setter_name, sr.display_name as setter_display
+           d.m1_paid_date, d.net_ppw
     FROM deals d
-    LEFT JOIN reps cr ON cr.id = d.closer_rep_id
-    LEFT JOIN reps sr ON sr.id = d.setter_rep_id
+    WHERE 1=1 ${statusFilterSql}
   `);
+  // Rep names looked up separately so the filtered query above stays simple to read.
+  const repNameRows = await all(`SELECT id, full_name, display_name FROM reps`);
+  const repNameMap = {};
+  repNameRows.forEach((r) => { repNameMap[r.id] = r.display_name || r.full_name; });
 
   let fundedThisMonth = 0, fundedYTD = 0;
   let paidThisMonth = 0, paidYTD = 0;
@@ -61,7 +80,7 @@ async function getOverallDashboard() {
       if (mk && mk.startsWith(thisYear)) paidYTD += amt;
       if (mk in monthlyTotals) monthlyTotals[mk] += amt;
       const key = d.closer_rep_id;
-      repTotals[key] = repTotals[key] || { name: d.closer_display || d.closer_name, dealCount: 0, total: 0 };
+      repTotals[key] = repTotals[key] || { name: repNameMap[key], dealCount: 0, total: 0 };
       repTotals[key].total += amt;
       repTotals[key].dealCount += 1;
     }
@@ -72,7 +91,7 @@ async function getOverallDashboard() {
       if (mk && mk.startsWith(thisYear)) paidYTD += amt;
       if (mk in monthlyTotals) monthlyTotals[mk] += amt;
       const key = d.setter_rep_id;
-      repTotals[key] = repTotals[key] || { name: d.setter_display || d.setter_name, dealCount: 0, total: 0 };
+      repTotals[key] = repTotals[key] || { name: repNameMap[key], dealCount: 0, total: 0 };
       repTotals[key].total += amt;
       repTotals[key].dealCount += 1;
     }
@@ -98,6 +117,62 @@ async function getOverallDashboard() {
     ORDER BY a.changed_at DESC LIMIT 10
   `);
 
+  // Funding status: what's been approved at a milestone but not yet logged as received.
+  const awaitingM1Rows = await all(`
+    SELECT id, expected_m1_amount, system_size_kw, net_ppw, gross_amount, rep_pool FROM deals d
+    WHERE m1_approved_date IS NOT NULL AND funds_received_m1_date IS NULL ${statusFilterSql}
+  `);
+  const awaitingM2Rows = await all(`
+    SELECT id, expected_m2_amount, system_size_kw, net_ppw, gross_amount, rep_pool FROM deals d
+    WHERE m2_approved_date IS NOT NULL AND funds_received_m2_date IS NULL ${statusFilterSql}
+  `);
+  const awaitingM1Total = round2(awaitingM1Rows.reduce((s, r) => s + (r.expected_m1_amount || 0), 0));
+  const awaitingM2Total = round2(awaitingM2Rows.reduce((s, r) => s + (r.expected_m2_amount || 0), 0));
+  const unionMap = new Map();
+  [...awaitingM1Rows, ...awaitingM2Rows].forEach((r) => unionMap.set(r.id, r));
+  const unionDeals = [...unionMap.values()];
+
+  const avgOf = (key) => {
+    const vals = unionDeals.map((d) => d[key]).filter((v) => v !== null && v !== undefined);
+    return vals.length ? round2(vals.reduce((s, v) => s + v, 0) / vals.length) : null;
+  };
+  const avgPoweredNet = (() => {
+    const vals = unionDeals.filter((d) => d.gross_amount !== null && d.gross_amount !== undefined)
+      .map((d) => (d.gross_amount || 0) - (d.rep_pool || 0));
+    return vals.length ? round2(vals.reduce((s, v) => s + v, 0) / vals.length) : null;
+  })();
+
+  const fundingStatus = {
+    awaitingM1: { total: awaitingM1Total, count: awaitingM1Rows.length },
+    awaitingM2: { total: awaitingM2Total, count: awaitingM2Rows.length },
+    incoming: { total: round2(awaitingM1Total + awaitingM2Total), count: unionDeals.length },
+    avgSystemSizeKw: avgOf('system_size_kw'),
+    avgNetPpw: avgOf('net_ppw'),
+    avgGross: avgOf('gross_amount'),
+    avgPoweredNet
+  };
+
+  // Weekly drill-down for a single selected month: commissions paid vs funds actually received.
+  let weeklyBreakdown = null;
+  if (month) {
+    const weeks = weeksInMonth(month);
+    const monthDeals = await all(`
+      SELECT closer_paid_date, closer_pay_net, setter_paid_date, setter_pay,
+             funds_received_m1_date, funds_received_m1, funds_received_m2_date, funds_received_m2
+      FROM deals d WHERE 1=1 ${statusFilterSql}
+    `);
+    weeklyBreakdown = weeks.map((w) => {
+      let commissionsPaid = 0, fundsReceived = 0;
+      for (const d of monthDeals) {
+        if (d.closer_paid_date && d.closer_paid_date.slice(0, 10) >= w.startDate && d.closer_paid_date.slice(0, 10) <= w.endDate) commissionsPaid += d.closer_pay_net || 0;
+        if (d.setter_paid_date && d.setter_paid_date.slice(0, 10) >= w.startDate && d.setter_paid_date.slice(0, 10) <= w.endDate) commissionsPaid += d.setter_pay || 0;
+        if (d.funds_received_m1_date && d.funds_received_m1_date.slice(0, 10) >= w.startDate && d.funds_received_m1_date.slice(0, 10) <= w.endDate) fundsReceived += d.funds_received_m1 || 0;
+        if (d.funds_received_m2_date && d.funds_received_m2_date.slice(0, 10) >= w.startDate && d.funds_received_m2_date.slice(0, 10) <= w.endDate) fundsReceived += d.funds_received_m2 || 0;
+      }
+      return { label: w.label, commissionsPaid: round2(commissionsPaid), fundsReceived: round2(fundsReceived) };
+    });
+  }
+
   return {
     kpis: {
       activeDeals: activeDeals.c,
@@ -108,7 +183,9 @@ async function getOverallDashboard() {
       outstandingAdvances: round2(outstandingAdvances.c),
       openClawbackCount: openClawbacks.cnt, openClawbackTotal: round2(openClawbacks.total)
     },
+    fundingStatus,
     monthlyTrend: lastNMonths(6).map((m) => ({ month: m, total: round2(monthlyTotals[m]) })),
+    weeklyBreakdown,
     pipeline,
     leaderboard,
     recentActivity

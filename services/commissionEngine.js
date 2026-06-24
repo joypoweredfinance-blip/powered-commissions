@@ -13,6 +13,34 @@ function sumHardCosts(adders) {
     .reduce((sum, a) => sum + Number(a.amount || 0), 0);
 }
 
+// Gross (POWERED's real cash margin) deducts EVERY line item, regardless of whether it
+// counts toward the rep's Net PPW — a cost that's excluded from the commission calc is
+// still a real dollar the company spent.
+function sumAllAdders(adders) {
+  return adders.reduce((sum, a) => sum + Number(a.amount || 0), 0);
+}
+
+// EPC cost is what POWERED pays the installer — excluded from the rep commission calc
+// (see computeNetPPW) but it's a real cost for the company's own margin (see computeGross).
+function computeEpcCost(epcRatePerWatt, systemSizeKw) {
+  return (epcRatePerWatt || 0) * systemSizeKw * 1000;
+}
+
+function computeGross(contractValue, epcCost, allAddersTotal) {
+  return contractValue - epcCost - allAddersTotal;
+}
+
+// What POWERED expects to receive from the installer at each milestone, per that
+// installer's payment schedule (e.g. SWS 50/50, PSS/SoCal 80/20).
+function computeExpectedFunding(gross, installer) {
+  const m1Pct = installer ? Number(installer.m1_pct || 0) : 0;
+  const m2Pct = installer ? Number(installer.m2_pct || 0) : 0;
+  return {
+    expectedM1: round2(gross * m1Pct),
+    expectedM2: round2(gross * m2Pct)
+  };
+}
+
 function computeNetPPW(contractValue, hardCosts, systemSizeKw) {
   const totalWatts = systemSizeKw * 1000;
   if (!totalWatts) return null;
@@ -117,6 +145,10 @@ function calculateAustinPay({ monthlyInstalledKw, settings }) {
 
 module.exports = {
   sumHardCosts,
+  sumAllAdders,
+  computeEpcCost,
+  computeGross,
+  computeExpectedFunding,
   computeNetPPW,
   lookupTierRate,
   calculateRepCommission,

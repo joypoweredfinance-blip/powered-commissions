@@ -13,12 +13,31 @@
 <script>renderAdminShell('/admin/dashboard.html', 'Dashboard');</script>
 <script src="/shared/charts.js"></script>
 <script>
+let ALL_STATUSES = [];
+let SELECTED_STATUS_IDS = [];
+let SELECTED_MONTH = '';
+let chartInstance = null;
+
 document.getElementById('pageContent').innerHTML = `
+  <div class="filter-toolbar">
+    <div class="status-filter-wrap">
+      <button class="btn secondary small" id="statusFilterBtn" style="width:auto;">Filter by Status ▾</button>
+      <div class="status-filter-panel" id="statusFilterPanel" style="display:none;"></div>
+    </div>
+    <select id="monthFilter" style="margin:0; max-width:200px;">
+      <option value="">All Time</option>
+    </select>
+    <span id="filterSummary" style="font-size:12px; color:var(--brand-muted);"></span>
+  </div>
+
+  <div class="kpi-grid" id="fundingGrid" style="margin-bottom:14px;"></div>
+  <div class="kpi-grid" id="avgGrid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));"></div>
+
   <div class="kpi-grid" id="kpiGrid"></div>
   <div class="detail-grid">
     <div>
       <div class="card" style="margin-bottom:20px;">
-        <p class="section-title">Commissions Paid — Last 6 Months</p>
+        <p class="section-title" id="trendTitle">Commissions Paid — Last 6 Months</p>
         <div style="height:240px;"><canvas id="trendChart"></canvas></div>
       </div>
       <div class="card">
@@ -31,7 +50,7 @@ document.getElementById('pageContent').innerHTML = `
         <p class="section-title">Rep Leaderboard</p>
         <div id="leaderboard"></div>
       </div>
-      <div class="card">
+      <div class="card" id="activityCard" style="display:none;">
         <p class="section-title">Recent Activity</p>
         <div id="activity" style="max-height:360px; overflow-y:auto;"></div>
       </div>
@@ -39,13 +58,87 @@ document.getElementById('pageContent').innerHTML = `
   </div>
 `;
 
-function kpiCard(label, value, sub) {
-  return `<div class="kpi-card"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+function kpiCard(label, value, sub, cls = '') {
+  return `<div class="kpi-card ${cls}"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+}
+
+function lastMonthOptions() {
+  const months = [];
+  const now = new Date();
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    months.push({ value: ym, label: d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) });
+  }
+  return months;
+}
+
+async function loadStatuses() {
+  const meta = await api('GET', '/api/meta');
+  ALL_STATUSES = meta.statuses;
+  document.getElementById('statusFilterPanel').innerHTML = `
+    ${ALL_STATUSES.map((s) => `
+      <label><input type="checkbox" class="status-cb" value="${s.id}"> ${s.label}</label>
+    `).join('')}
+    <div class="actions">
+      <button class="btn secondary small" id="statusSelectAll" style="width:auto;">All</button>
+      <button class="btn secondary small" id="statusClearAll" style="width:auto;">Clear</button>
+      <button class="btn small" id="statusApply" style="width:auto; margin-left:auto;">Apply</button>
+    </div>
+  `;
+  const monthSelect = document.getElementById('monthFilter');
+  lastMonthOptions().forEach((m) => monthSelect.insertAdjacentHTML('beforeend', `<option value="${m.value}">${m.label}</option>`));
+
+  document.getElementById('statusFilterBtn').addEventListener('click', () => {
+    const panel = document.getElementById('statusFilterPanel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  });
+  document.getElementById('statusSelectAll').addEventListener('click', () => {
+    document.querySelectorAll('.status-cb').forEach((cb) => { cb.checked = true; });
+  });
+  document.getElementById('statusClearAll').addEventListener('click', () => {
+    document.querySelectorAll('.status-cb').forEach((cb) => { cb.checked = false; });
+  });
+  document.getElementById('statusApply').addEventListener('click', () => {
+    SELECTED_STATUS_IDS = [...document.querySelectorAll('.status-cb:checked')].map((cb) => cb.value);
+    document.getElementById('statusFilterPanel').style.display = 'none';
+    load();
+  });
+  document.getElementById('monthFilter').addEventListener('change', (e) => {
+    SELECTED_MONTH = e.target.value;
+    load();
+  });
+  document.addEventListener('click', (e) => {
+    const wrap = document.querySelector('.status-filter-wrap');
+    if (wrap && !wrap.contains(e.target)) document.getElementById('statusFilterPanel').style.display = 'none';
+  });
 }
 
 async function load() {
-  const d = await api('GET', '/api/dashboard/overall');
+  const params = new URLSearchParams();
+  SELECTED_STATUS_IDS.forEach((id) => params.append('statusIds', id));
+  if (SELECTED_MONTH) params.set('month', SELECTED_MONTH);
+
+  const summary = [];
+  if (SELECTED_STATUS_IDS.length) summary.push(`${SELECTED_STATUS_IDS.length} status${SELECTED_STATUS_IDS.length > 1 ? 'es' : ''} selected`);
+  document.getElementById('filterSummary').textContent = summary.join(' · ');
+
+  const d = await api('GET', `/api/dashboard/overall?${params.toString()}`);
   const k = d.kpis;
+  const f = d.fundingStatus;
+
+  document.getElementById('fundingGrid').innerHTML = [
+    kpiCard('Incoming (Awaiting Funding)', fmtMoney(f.incoming.total), `${f.incoming.count} deals`, 'funding'),
+    kpiCard('Awaiting M1', fmtMoney(f.awaitingM1.total), `${f.awaitingM1.count} deals`, 'funding'),
+    kpiCard('Awaiting M2', fmtMoney(f.awaitingM2.total), `${f.awaitingM2.count} deals`, 'funding')
+  ].join('');
+  document.getElementById('avgGrid').innerHTML = [
+    kpiCard('Avg System Size', f.avgSystemSizeKw !== null ? f.avgSystemSizeKw + ' kW' : '—'),
+    kpiCard('Avg Net PPW', f.avgNetPpw !== null ? '$' + f.avgNetPpw : '—'),
+    kpiCard('Avg Gross', fmtMoney(f.avgGross)),
+    kpiCard('Avg POWERED Net', fmtMoney(f.avgPoweredNet))
+  ].join('');
+
   document.getElementById('kpiGrid').innerHTML = [
     kpiCard('Active Deals', k.activeDeals, `${k.totalDeals} total all-time`),
     kpiCard('Funded This Month', k.fundedThisMonth, `${k.fundedYTD} YTD`),
@@ -55,7 +148,14 @@ async function load() {
     kpiCard('Open Clawbacks', k.openClawbackCount, fmtMoney(k.openClawbackTotal))
   ].join('');
 
-  renderTrendChart('trendChart', d.monthlyTrend, { color: '#6B3FD4', label: 'Commissions Paid' });
+  if (chartInstance) chartInstance.destroy();
+  if (d.weeklyBreakdown) {
+    document.getElementById('trendTitle').textContent = `Weekly: Commissions Paid vs Funds Received — ${SELECTED_MONTH}`;
+    chartInstance = renderWeeklyComparisonChart('trendChart', d.weeklyBreakdown);
+  } else {
+    document.getElementById('trendTitle').textContent = 'Commissions Paid — Last 6 Months';
+    chartInstance = renderTrendChart('trendChart', d.monthlyTrend, { color: '#6B3FD4', label: 'Commissions Paid' });
+  }
   renderFunnelChart('funnelChart', d.pipeline);
 
   document.getElementById('leaderboard').innerHTML = d.leaderboard.length === 0
@@ -67,17 +167,20 @@ async function load() {
       </div>
     `).join('');
 
-  document.getElementById('activity').innerHTML = d.recentActivity.length === 0
-    ? '<p style="color:var(--brand-muted); font-size:13px;">No activity yet.</p>'
-    : d.recentActivity.map((a) => `
-      <div class="audit-item">
-        ${a.customer_name ? `<strong>${a.customer_name}</strong> — ` : ''}${a.field_name.replace(/_/g, ' ')}: ${a.old_value} → ${a.new_value}
-        <div class="meta">${a.changed_by_email || 'system'} · ${new Date(a.changed_at).toLocaleString()}</div>
-      </div>
-    `).join('');
+  if (d.recentActivity) {
+    document.getElementById('activityCard').style.display = 'block';
+    document.getElementById('activity').innerHTML = d.recentActivity.length === 0
+      ? '<p style="color:var(--brand-muted); font-size:13px;">No activity yet.</p>'
+      : d.recentActivity.map((a) => `
+        <div class="audit-item">
+          ${a.customer_name ? `<strong>${a.customer_name}</strong> — ` : ''}${a.field_name.replace(/_/g, ' ')}: ${a.old_value} → ${a.new_value}
+          <div class="meta">${a.changed_by_email || 'system'} · ${new Date(a.changed_at).toLocaleString()}</div>
+        </div>
+      `).join('');
+  }
 }
 
-load();
+loadStatuses().then(load);
 </script>
 </body>
 </html>

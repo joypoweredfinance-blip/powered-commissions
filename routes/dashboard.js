@@ -4,7 +4,11 @@ const dashboardService = require('../services/dashboardService');
 
 router.get('/overall', async (req, res) => {
   try {
-    res.json(await dashboardService.getOverallDashboard());
+    const data = await dashboardService.getOverallDashboard(req.query);
+    // Recent Activity surfaces audit-trail-style entries — restricted to super_admin,
+    // same as the Audit Log page itself.
+    if (req.user.role !== 'super_admin') delete data.recentActivity;
+    res.json(data);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

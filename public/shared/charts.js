@@ -29,6 +29,29 @@ function renderTrendChart(canvasId, trend, { color = '#6B3FD4', label = 'Paid' }
   });
 }
 
+function renderWeeklyComparisonChart(canvasId, weeklyBreakdown) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  return new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: weeklyBreakdown.map((w) => w.label),
+      datasets: [
+        { label: 'Commissions Paid', data: weeklyBreakdown.map((w) => w.commissionsPaid), backgroundColor: '#6B3FD4', borderRadius: 6, maxBarThickness: 32 },
+        { label: 'Funds Received', data: weeklyBreakdown.map((w) => w.fundsReceived), backgroundColor: '#1B5E45', borderRadius: 6, maxBarThickness: 32 }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 12 } } } },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: (v) => '$' + v.toLocaleString() }, grid: { color: '#EFEDF6' } },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+}
+
 function renderFunnelChart(canvasId, pipeline) {
   const ctx = document.getElementById(canvasId).getContext('2d');
   return new Chart(ctx, {

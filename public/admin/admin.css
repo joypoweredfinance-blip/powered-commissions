@@ -93,6 +93,20 @@ table.data-table tr.deal-row:hover { background: #FAF9FD; }
 .kpi-card .label { font-size: 12px; color: var(--brand-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 .kpi-card .value { font-size: 26px; font-weight: 800; color: var(--brand-black); margin-top: 6px; }
 .kpi-card .sub { font-size: 12px; color: var(--brand-muted); margin-top: 4px; }
+.kpi-card.funding { background: var(--status-green-bg); border-color: #BFE6D6; }
+.kpi-card.funding .value { color: var(--status-green); }
+.kpi-card.funding .label { color: #2C7A5C; }
+
+.filter-toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
+.status-filter-wrap { position: relative; }
+.status-filter-panel {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
+  background: #fff; border: 1px solid var(--brand-border); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card); padding: 12px; min-width: 260px; max-height: 320px; overflow-y: auto;
+}
+.status-filter-panel label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 400; padding: 5px 2px; margin-bottom: 0; }
+.status-filter-panel input[type="checkbox"] { width: auto; margin: 0; }
+.status-filter-panel .actions { display: flex; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--brand-border); }
 
 .detail-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
 @media (max-width: 900px) { .detail-grid { grid-template-columns: 1fr; } }

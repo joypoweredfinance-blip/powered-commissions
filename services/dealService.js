@@ -1,5 +1,8 @@
 const { run, get, all } = require('../db/client');
-const { calculateRepCommission, calculateOwnerDistribution, calculateJoeyM2Bonus } = require('./commissionEngine');
+const {
+  calculateRepCommission, calculateOwnerDistribution, calculateJoeyM2Bonus,
+  computeEpcCost, computeGross, computeExpectedFunding, sumAllAdders, round2
+} = require('./commissionEngine');
 const auditLog = require('./auditLog');
 
 const EDITABLE_FIELDS = [
@@ -8,12 +11,14 @@ const EDITABLE_FIELDS = [
   'system_size_kw', 'panel_count', 'panel_watts', 'annual_production_kwh', 'contract_value', 'epc_rate_per_watt',
   'monthly_payment', 'rate_per_kwh', 'escalator_pct', 'cashback_amount', 'date_signed', 'install_date',
   'install_completed_date', 'ntp_approved_date', 'm1_approved_date', 'm1_paid_date', 'pto_granted_date',
-  'm2_approved_date', 'm2_paid_date', 'admin_notes'
+  'm2_approved_date', 'm2_paid_date', 'admin_notes',
+  'funds_received_m1', 'funds_received_m1_date', 'funds_received_m2', 'funds_received_m2_date'
 ];
 
 const COMPUTED_FIELDS = [
   'net_ppw', 'pay_scale_rate', 'rep_pool', 'closer_pay_gross', 'closer_pay_net', 'setter_pay',
-  'owner_etai_total', 'owner_noy_total', 'joey_m2_bonus', 'below_floor'
+  'owner_etai_total', 'owner_noy_total', 'joey_m2_bonus', 'below_floor',
+  'gross_amount', 'expected_m1_amount', 'expected_m2_amount'
 ];
 
 async function getCommissionSettings() {
@@ -122,6 +127,7 @@ async function recalculate(id, userId, { force = false } = {}) {
   const adders = await all(`SELECT amount, counts_as_hard_cost FROM deal_adders WHERE deal_id = ?`, [id]);
   const payScale = await getPayScaleForRep(deal.closer_rep_id);
   const settings = await getCommissionSettings();
+  const installer = deal.installer_id ? await get(`SELECT m1_pct, m2_pct FROM installers WHERE id = ?`, [deal.installer_id]) : null;
 
   const result = calculateRepCommission({
     deal: {
@@ -149,6 +155,11 @@ async function recalculate(id, userId, { force = false } = {}) {
     settings
   });
 
+  const epcCost = computeEpcCost(deal.epc_rate_per_watt, deal.system_size_kw || 0);
+  const allAddersTotal = sumAllAdders(adders);
+  const gross = round2(computeGross(deal.contract_value || 0, epcCost, allAddersTotal));
+  const { expectedM1, expectedM2 } = computeExpectedFunding(gross, installer);
+
   const newValues = {
     net_ppw: result.netPPW,
     pay_scale_rate: result.payScaleRate,
@@ -159,15 +170,20 @@ async function recalculate(id, userId, { force = false } = {}) {
     owner_etai_total: owner.etaiTotal,
     owner_noy_total: owner.noyTotal,
     joey_m2_bonus: joeyBonus,
-    below_floor: result.belowFloor ? 1 : 0
+    below_floor: result.belowFloor ? 1 : 0,
+    gross_amount: gross,
+    expected_m1_amount: expectedM1,
+    expected_m2_amount: expectedM2
   };
 
   await run(
     `UPDATE deals SET net_ppw=?, pay_scale_rate=?, rep_pool=?, closer_pay_gross=?, closer_pay_net=?, setter_pay=?,
-     owner_etai_total=?, owner_noy_total=?, joey_m2_bonus=?, below_floor=?, updated_at = datetime('now') WHERE id=?`,
+     owner_etai_total=?, owner_noy_total=?, joey_m2_bonus=?, below_floor=?,
+     gross_amount=?, expected_m1_amount=?, expected_m2_amount=?, updated_at = datetime('now') WHERE id=?`,
     [newValues.net_ppw, newValues.pay_scale_rate, newValues.rep_pool, newValues.closer_pay_gross,
       newValues.closer_pay_net, newValues.setter_pay, newValues.owner_etai_total, newValues.owner_noy_total,
-      newValues.joey_m2_bonus, newValues.below_floor, id]
+      newValues.joey_m2_bonus, newValues.below_floor,
+      newValues.gross_amount, newValues.expected_m1_amount, newValues.expected_m2_amount, id]
   );
 
   return getDeal(id);

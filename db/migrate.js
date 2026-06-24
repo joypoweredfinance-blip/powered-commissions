@@ -7,7 +7,14 @@ const { run, get, all } = require('./client');
 const COLUMN_MIGRATIONS = [
   { table: 'deals', column: 'owner_m1_paid_date', definition: 'TEXT' },
   { table: 'deals', column: 'owner_m2_paid_date', definition: 'TEXT' },
-  { table: 'deals', column: 'joey_paid_date', definition: 'TEXT' }
+  { table: 'deals', column: 'joey_paid_date', definition: 'TEXT' },
+  { table: 'deals', column: 'gross_amount', definition: 'REAL' },
+  { table: 'deals', column: 'expected_m1_amount', definition: 'REAL' },
+  { table: 'deals', column: 'expected_m2_amount', definition: 'REAL' },
+  { table: 'deals', column: 'funds_received_m1', definition: 'REAL' },
+  { table: 'deals', column: 'funds_received_m1_date', definition: 'TEXT' },
+  { table: 'deals', column: 'funds_received_m2', definition: 'REAL' },
+  { table: 'deals', column: 'funds_received_m2_date', definition: 'TEXT' }
 ];
 
 async function columnExists(table, column) {
