@@ -14,10 +14,10 @@
 document.getElementById('pageContent').innerHTML = `
   <div class="detail-grid">
     <div>
-      <div class="card" style="margin-bottom:16px;">
-        <p class="section-title">Installers</p>
+      <div class="card" style="margin-bottom:16px; overflow-x:auto;">
+        <p class="section-title">Installers <span style="font-weight:400; text-transform:none; font-size:12px;">— click any field to edit, changes save automatically</span></p>
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Rate/W</th><th>M1%</th><th>M2%</th><th>Notes</th></tr></thead>
+          <thead><tr><th>Name</th><th>Rate/W</th><th>M1%</th><th>M2%</th><th>Notes</th><th>Status</th></tr></thead>
           <tbody id="installersBody"></tbody>
         </table>
       </div>
@@ -37,10 +37,10 @@ document.getElementById('pageContent').innerHTML = `
       </div>
     </div>
     <div>
-      <div class="card" style="margin-bottom:16px;">
-        <p class="section-title">Financiers</p>
+      <div class="card" style="margin-bottom:16px; overflow-x:auto;">
+        <p class="section-title">Financiers <span style="font-weight:400; text-transform:none; font-size:12px;">— click any field to edit, changes save automatically</span></p>
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Min FICO</th><th>Notes</th></tr></thead>
+          <thead><tr><th>Name</th><th>Min FICO</th><th>Notes</th><th>Status</th></tr></thead>
           <tbody id="financiersBody"></tbody>
         </table>
       </div>
@@ -55,24 +55,61 @@ document.getElementById('pageContent').innerHTML = `
   </div>
 `;
 
+function editableCell(cls, id, type, value, step) {
+  return `<input type="${type}" class="${cls}" data-id="${id}" ${step ? `step="${step}"` : ''} value="${value ?? ''}" style="margin:0; min-width:90px;">`;
+}
+
 async function loadAll() {
   const data = await api('GET', '/api/reference');
+
   document.getElementById('installersBody').innerHTML = data.installers.map((i) => `
-    <tr>
-      <td><strong>${i.name}</strong>${i.active ? '' : ' <span class="badge muted">inactive</span>'}</td>
-      <td>${i.rate_per_watt ?? '—'}</td>
-      <td>${i.m1_pct !== null ? (i.m1_pct * 100) + '%' : '—'}</td>
-      <td>${i.m2_pct !== null ? (i.m2_pct * 100) + '%' : '—'}</td>
-      <td style="color:var(--brand-muted); font-size:13px;">${i.notes || ''}</td>
+    <tr data-id="${i.id}" style="${i.active ? '' : 'opacity:0.55;'}">
+      <td>${editableCell('inst-name', i.id, 'text', i.name)}</td>
+      <td>${editableCell('inst-rate', i.id, 'number', i.rate_per_watt, '0.01')}</td>
+      <td>${editableCell('inst-m1', i.id, 'number', i.m1_pct, '0.01')}</td>
+      <td>${editableCell('inst-m2', i.id, 'number', i.m2_pct, '0.01')}</td>
+      <td>${editableCell('inst-notes', i.id, 'text', i.notes)}</td>
+      <td><button class="btn secondary small inst-toggle" data-id="${i.id}" data-active="${i.active}" style="width:auto;">${i.active ? 'Deactivate' : 'Reactivate'}</button></td>
     </tr>
   `).join('');
+
   document.getElementById('financiersBody').innerHTML = data.financiers.map((f) => `
-    <tr>
-      <td><strong>${f.name}</strong>${f.active ? '' : ' <span class="badge muted">inactive</span>'}</td>
-      <td>${f.min_fico ?? '—'}</td>
-      <td style="color:var(--brand-muted); font-size:13px;">${f.notes || ''}</td>
+    <tr data-id="${f.id}" style="${f.active ? '' : 'opacity:0.55;'}">
+      <td>${editableCell('fin-name', f.id, 'text', f.name)}</td>
+      <td>${editableCell('fin-fico', f.id, 'number', f.min_fico)}</td>
+      <td>${editableCell('fin-notes', f.id, 'text', f.notes)}</td>
+      <td><button class="btn secondary small fin-toggle" data-id="${f.id}" data-active="${f.active}" style="width:auto;">${f.active ? 'Deactivate' : 'Reactivate'}</button></td>
     </tr>
   `).join('');
+
+  wireEditableRows();
+}
+
+function wireEditableRows() {
+  async function saveInstaller(id, field, value) {
+    try { await api('PUT', `/api/reference/installers/${id}`, { [field]: value }); } catch (e) { alert(e.message); }
+  }
+  async function saveFinancier(id, field, value) {
+    try { await api('PUT', `/api/reference/financiers/${id}`, { [field]: value }); } catch (e) { alert(e.message); }
+  }
+
+  document.querySelectorAll('.inst-name').forEach((el) => el.addEventListener('change', () => saveInstaller(el.dataset.id, 'name', el.value.trim())));
+  document.querySelectorAll('.inst-rate').forEach((el) => el.addEventListener('change', () => saveInstaller(el.dataset.id, 'rate_per_watt', parseFloat(el.value) || null)));
+  document.querySelectorAll('.inst-m1').forEach((el) => el.addEventListener('change', () => saveInstaller(el.dataset.id, 'm1_pct', parseFloat(el.value) || null)));
+  document.querySelectorAll('.inst-m2').forEach((el) => el.addEventListener('change', () => saveInstaller(el.dataset.id, 'm2_pct', parseFloat(el.value) || null)));
+  document.querySelectorAll('.inst-notes').forEach((el) => el.addEventListener('change', () => saveInstaller(el.dataset.id, 'notes', el.value.trim() || null)));
+  document.querySelectorAll('.inst-toggle').forEach((btn) => btn.addEventListener('click', async () => {
+    await saveInstaller(btn.dataset.id, 'active', btn.dataset.active === '1' ? 0 : 1);
+    loadAll();
+  }));
+
+  document.querySelectorAll('.fin-name').forEach((el) => el.addEventListener('change', () => saveFinancier(el.dataset.id, 'name', el.value.trim())));
+  document.querySelectorAll('.fin-fico').forEach((el) => el.addEventListener('change', () => saveFinancier(el.dataset.id, 'min_fico', parseInt(el.value) || null)));
+  document.querySelectorAll('.fin-notes').forEach((el) => el.addEventListener('change', () => saveFinancier(el.dataset.id, 'notes', el.value.trim() || null)));
+  document.querySelectorAll('.fin-toggle').forEach((btn) => btn.addEventListener('click', async () => {
+    await saveFinancier(btn.dataset.id, 'active', btn.dataset.active === '1' ? 0 : 1);
+    loadAll();
+  }));
 }
 
 document.getElementById('addInstallerBtn').addEventListener('click', async () => {
