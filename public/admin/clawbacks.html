@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Clawbacks — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+<script src="/admin/admin-common.js"></script>
+<script>renderAdminShell('/admin/clawbacks.html', 'Clawbacks');</script>
+<script>
+let REPS = [];
+
+document.getElementById('pageContent').innerHTML = `
+  <p style="color:var(--brand-muted); margin-bottom:16px; max-width:680px;">
+    Money owed back when a deal cancels. Setters are never clawed back — only closers, and only the closer's share. Split between the rep and POWERED as needed.
+  </p>
+  <div class="card" style="margin-bottom:16px; max-width:600px;">
+    <p class="section-title">New Clawback</p>
+    <div class="field-row">
+      <div><label>Rep</label><select id="nc_rep_id"></select></div>
+      <div><label>Total Clawback ($)</label><input type="number" step="0.01" id="nc_total"></div>
+    </div>
+    <div class="field-row">
+      <div><label>Rep's Share ($)</label><input type="number" step="0.01" id="nc_rep_share"></div>
+      <div><label>POWERED's Share ($)</label><input type="number" step="0.01" id="nc_pwrd_share"></div>
+    </div>
+    <label>Notes</label><input type="text" id="nc_notes">
+    <button class="btn small" id="addClawbackBtn" style="width:auto;">Add Clawback</button>
+  </div>
+  <div class="card" style="overflow-x:auto;">
+    <table class="data-table">
+      <thead><tr><th>Rep</th><th>Deal</th><th>Total</th><th>Rep Share</th><th>POWERED Share</th><th>Deducted</th><th>Notes</th><th></th></tr></thead>
+      <tbody id="clawbacksBody"></tbody>
+    </table>
+  </div>
+`;
+
+async function loadReps() {
+  const meta = await api('GET', '/api/meta');
+  REPS = meta.reps;
+  document.getElementById('nc_rep_id').innerHTML = REPS.map((r) => `<option value="${r.id}">${r.display_name || r.full_name}</option>`).join('');
+}
+
+async function loadClawbacks() {
+  const rows = await api('GET', '/api/clawbacks');
+  document.getElementById('clawbacksBody').innerHTML = rows.map((c) => `
+    <tr data-id="${c.id}">
+      <td>${c.rep_name}</td>
+      <td>${c.customer_name || '—'}</td>
+      <td>${fmtMoney(c.total_clawback)}</td>
+      <td>${fmtMoney(c.rep_share)}</td>
+      <td>${fmtMoney(c.pwrd_share)}</td>
+      <td><label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="deducted-toggle" ${c.deducted ? 'checked' : ''} style="width:auto;"> Deducted</label></td>
+      <td style="color:var(--brand-muted); font-size:13px;">${c.notes || ''}</td>
+      <td><button class="icon-btn delete-btn">✕</button></td>
+    </tr>
+  `).join('');
+
+  document.querySelectorAll('#clawbacksBody tr').forEach((row) => {
+    const id = row.dataset.id;
+    row.querySelector('.deducted-toggle').addEventListener('change', async (e) => {
+      try {
+        await api('PUT', `/api/clawbacks/${id}`, {
+          deducted: e.target.checked,
+          deducted_date: e.target.checked ? new Date().toISOString().slice(0, 10) : null
+        });
+      } catch (err) { alert(err.message); }
+    });
+    row.querySelector('.delete-btn').addEventListener('click', async () => {
+      if (!confirm('Delete this clawback record?')) return;
+      try { await api('DELETE', `/api/clawbacks/${id}`); loadClawbacks(); } catch (err) { alert(err.message); }
+    });
+  });
+}
+
+document.getElementById('addClawbackBtn').addEventListener('click', async () => {
+  try {
+    await api('POST', '/api/clawbacks', {
+      rep_id: Number(document.getElementById('nc_rep_id').value),
+      total_clawback: parseFloat(document.getElementById('nc_total').value),
+      rep_share: parseFloat(document.getElementById('nc_rep_share').value) || 0,
+      pwrd_share: parseFloat(document.getElementById('nc_pwrd_share').value) || 0,
+      notes: document.getElementById('nc_notes').value.trim() || null
+    });
+    document.getElementById('nc_notes').value = '';
+    loadClawbacks();
+  } catch (e) { alert(e.message); }
+});
+
+loadReps().then(loadClawbacks);
+</script>
+</body>
+</html>

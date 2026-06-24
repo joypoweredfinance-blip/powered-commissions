@@ -1,0 +1,100 @@
+const NAV_ITEMS = [
+  { section: 'Overview' },
+  { href: '/admin/dashboard.html', label: '📊 Dashboard' },
+  { section: 'Deals' },
+  { href: '/admin/board.html', label: '📋 Deals Board' },
+  { section: 'People' },
+  { href: '/admin/reps.html', label: '🧑‍💼 Sales Reps' },
+  { href: '/admin/payroll-staff.html', label: '🧾 Payroll Staff' },
+  { section: 'Money' },
+  { href: '/admin/advances.html', label: '💸 Advances' },
+  { href: '/admin/clawbacks.html', label: '↩️ Clawbacks' },
+  { section: 'Configuration' },
+  { href: '/admin/settings.html', label: '⚙️ Commission Rules' },
+  { href: '/admin/installers.html', label: '🏗️ Installers & Financiers' },
+  { href: '/admin/audit.html', label: '🕓 Audit Log' }
+];
+
+function injectFavicon() {
+  const link = document.createElement('link');
+  link.rel = 'icon';
+  link.href = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%2315131A'/%3E%3Cpath d='M13 2 L6 14 H11 L9 22 L18 9 H12 Z' fill='%236B3FD4'/%3E%3C/svg%3E";
+  document.head.appendChild(link);
+}
+injectFavicon();
+
+function renderAdminShell(activeHref, pageTitle) {
+  const navHtml = NAV_ITEMS.map((item) => {
+    if (item.section) return `<div class="section-label">${item.section}</div>`;
+    const active = item.href === activeHref ? 'active' : '';
+    return `<a href="${item.href}" class="${active}">${item.label}</a>`;
+  }).join('');
+
+  document.body.insertAdjacentHTML('afterbegin', `
+    <div class="app-shell">
+      <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+      <aside class="sidebar" id="sidebar">
+        <div class="brand-logo">POWERED <span class="bolt">⚡</span></div>
+        <nav>${navHtml}</nav>
+      </aside>
+      <div class="main-area">
+        <div class="topbar">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <button class="icon-btn menu-toggle" id="menuToggle" aria-label="Menu">☰</button>
+            <h1>${pageTitle}</h1>
+          </div>
+          <div class="user-chip">
+            <span id="userEmail"></span>
+            <button class="btn secondary small" id="logoutBtn">Log out</button>
+          </div>
+        </div>
+        <div class="page-content" id="pageContent"></div>
+      </div>
+    </div>
+  `);
+
+  document.getElementById('logoutBtn').addEventListener('click', async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    window.location.href = '/login.html';
+  });
+
+  const sidebar = document.getElementById('sidebar');
+  const backdrop = document.getElementById('sidebarBackdrop');
+  document.getElementById('menuToggle').addEventListener('click', () => {
+    sidebar.classList.toggle('open');
+    backdrop.classList.toggle('show');
+  });
+  backdrop.addEventListener('click', () => {
+    sidebar.classList.remove('open');
+    backdrop.classList.remove('show');
+  });
+
+  fetch('/api/auth/me').then((r) => r.json()).then((me) => {
+    document.getElementById('userEmail').textContent = me.email || '';
+  }).catch(() => {});
+}
+
+function fmtMoney(n) {
+  if (n === null || n === undefined || n === '') return '—';
+  const num = Number(n);
+  const sign = num < 0 ? '-' : '';
+  return `${sign}$${Math.abs(num).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  try {
+    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch (e) { return d; }
+}
+
+async function api(method, url, body) {
+  const res = await fetch(url, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}

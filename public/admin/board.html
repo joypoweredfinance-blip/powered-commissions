@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Deals Board — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+<script src="/admin/admin-common.js"></script>
+<script>renderAdminShell('/admin/board.html', 'Deals Board');</script>
+<script>
+document.getElementById('pageContent').innerHTML = `
+  <div class="toolbar">
+    <input type="text" id="searchInput" placeholder="Search customer or address…">
+    <select id="repFilter"><option value="">All reps</option></select>
+    <select id="installerFilter"><option value="">All installers</option></select>
+    <select id="phaseFilter">
+      <option value="">All phases</option>
+      <option value="pre_install">Pre-install</option>
+      <option value="post_install">Post-install</option>
+      <option value="closed">Closed</option>
+    </select>
+    <button class="btn small" id="newDealBtn" style="width:auto; margin-left:auto;">+ New Deal</button>
+  </div>
+  <div class="card" style="overflow-x:auto;">
+    <table class="data-table" id="dealsTable">
+      <thead>
+        <tr>
+          <th>Customer</th><th>Closer</th><th>Setter</th><th>kW</th><th>Net PPW</th>
+          <th>Closer Pay</th><th>Setter Pay</th><th>Approved</th><th>Installer</th>
+        </tr>
+      </thead>
+      <tbody id="dealsBody"><tr><td colspan="9" style="text-align:center; color:var(--brand-muted); padding:30px;">Loading…</td></tr></tbody>
+    </table>
+  </div>
+`;
+
+let META = { reps: [], installers: [] };
+
+function approvalBadge(deal) {
+  const bits = [];
+  if (deal.closer_rep_id) bits.push(deal.closer_breakdown_approved ? '<span class="badge green">Closer ✓</span>' : '<span class="badge muted">Closer pending</span>');
+  if (deal.setter_rep_id) bits.push(deal.setter_breakdown_approved ? '<span class="badge amber">Setter ✓</span>' : '<span class="badge muted">Setter pending</span>');
+  return bits.join(' ') || '—';
+}
+
+async function loadMeta() {
+  META = await api('GET', '/api/meta');
+  const repFilter = document.getElementById('repFilter');
+  META.reps.forEach((r) => repFilter.insertAdjacentHTML('beforeend', `<option value="${r.id}">${r.display_name || r.full_name}</option>`));
+  const installerFilter = document.getElementById('installerFilter');
+  META.installers.forEach((i) => installerFilter.insertAdjacentHTML('beforeend', `<option value="${i.id}">${i.name}</option>`));
+}
+
+async function loadDeals() {
+  const params = new URLSearchParams();
+  const search = document.getElementById('searchInput').value.trim();
+  const repId = document.getElementById('repFilter').value;
+  const installerId = document.getElementById('installerFilter').value;
+  const phase = document.getElementById('phaseFilter').value;
+  if (search) params.set('search', search);
+  if (repId) params.set('repId', repId);
+  if (installerId) params.set('installerId', installerId);
+  if (phase) params.set('phase', phase);
+
+  const deals = await api('GET', `/api/deals?${params.toString()}`);
+  const tbody = document.getElementById('dealsBody');
+  if (deals.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:var(--brand-muted); padding:30px;">No deals yet. Click "+ New Deal" to add your first one.</td></tr>`;
+    return;
+  }
+  let html = '';
+  let lastStatus = null;
+  for (const d of deals) {
+    if (d.status_label !== lastStatus) {
+      html += `<tr class="group-row"><td colspan="9">${d.status_label || 'No Status'}</td></tr>`;
+      lastStatus = d.status_label;
+    }
+    html += `
+      <tr class="deal-row" data-id="${d.id}">
+        <td><strong>${d.customer_name}</strong><br><span style="color:var(--brand-muted); font-size:12px;">${d.customer_address || ''}</span></td>
+        <td>${d.closer_display || d.closer_name || '—'}</td>
+        <td>${d.setter_display || d.setter_name || '—'}</td>
+        <td>${d.system_size_kw || '—'}</td>
+        <td>${d.below_floor ? '<span class="badge amber">Below floor</span>' : (d.net_ppw ?? '—')}</td>
+        <td>${fmtMoney(d.closer_pay_net)}</td>
+        <td>${fmtMoney(d.setter_pay)}</td>
+        <td>${approvalBadge(d)}</td>
+        <td>${d.installer_name || '—'}</td>
+      </tr>
+    `;
+  }
+  tbody.innerHTML = html;
+  tbody.querySelectorAll('.deal-row').forEach((row) => {
+    row.addEventListener('click', () => { window.location.href = `/admin/deal.html?id=${row.dataset.id}`; });
+  });
+}
+
+document.getElementById('searchInput').addEventListener('input', () => { clearTimeout(window._t); window._t = setTimeout(loadDeals, 250); });
+document.getElementById('repFilter').addEventListener('change', loadDeals);
+document.getElementById('installerFilter').addEventListener('change', loadDeals);
+document.getElementById('phaseFilter').addEventListener('change', loadDeals);
+document.getElementById('newDealBtn').addEventListener('click', () => { window.location.href = '/admin/deal.html'; });
+
+loadMeta().then(loadDeals);
+</script>
+</body>
+</html>

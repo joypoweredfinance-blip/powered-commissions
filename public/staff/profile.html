@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Profile — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/rep/rep.css">
+</head>
+<body>
+<script src="/staff/staff-common.js"></script>
+<script>renderStaffShell('/staff/profile.html');</script>
+<script>
+async function load() {
+  const me = await api('GET', '/api/auth/me');
+  document.getElementById('pageContent').innerHTML = `
+    <div class="detail-section">
+      <p class="section-title" style="margin-top:0;">Account</p>
+      <div class="detail-row"><span class="lbl">Email</span><span class="val">${me.email}</span></div>
+    </div>
+    <div class="detail-section">
+      <p class="section-title" style="margin-top:0;">Change Password</p>
+      <div class="error-msg" id="errorMsg"></div>
+      <label for="newPassword">New password (min 8 characters)</label>
+      <input type="password" id="newPassword" minlength="8">
+      <label for="confirmPassword">Confirm</label>
+      <input type="password" id="confirmPassword" minlength="8">
+      <button class="btn" id="saveBtn">Update Password</button>
+    </div>
+  `;
+  document.getElementById('saveBtn').addEventListener('click', async () => {
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    const errorMsg = document.getElementById('errorMsg');
+    errorMsg.classList.remove('show');
+    if (newPassword !== confirmPassword) {
+      errorMsg.textContent = 'Passwords do not match.';
+      errorMsg.classList.add('show');
+      return;
+    }
+    try {
+      await api('POST', '/api/auth/change-password', { newPassword });
+      document.getElementById('saveBtn').textContent = 'Updated ✓';
+      setTimeout(() => { document.getElementById('saveBtn').textContent = 'Update Password'; }, 1500);
+    } catch (e) {
+      errorMsg.textContent = e.message;
+      errorMsg.classList.add('show');
+    }
+  });
+}
+load();
+</script>
+</body>
+</html>

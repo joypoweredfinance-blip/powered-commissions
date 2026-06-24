@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Job Detail — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/rep/rep.css">
+</head>
+<body>
+<script src="/rep/rep-common.js"></script>
+<script>renderRepShell('/rep/jobs.html');</script>
+<script>
+const jobId = new URLSearchParams(window.location.search).get('id');
+
+async function load() {
+  let j;
+  try {
+    j = await api('GET', `/api/myjobs/${jobId}`);
+  } catch (e) {
+    document.getElementById('pageContent').innerHTML = `<p style="text-align:center; color:var(--brand-muted); margin-top:40px;">${e.message}</p>`;
+    return;
+  }
+  const isCloser = j.viewRole === 'closer';
+  document.getElementById('pageContent').innerHTML = `
+    <div class="breakdown-header role-${j.viewRole}">
+      <div class="role-label">${isCloser ? 'Final Breakdown · Closer' : 'Setter Pay Breakdown'}</div>
+      <div class="customer">${j.customer_name}</div>
+    </div>
+
+    <div class="detail-section">
+      <p class="section-title" style="margin-top:0;">Project Details</p>
+      <div class="detail-row"><span class="lbl">Address</span><span class="val">${j.customer_address || '—'}</span></div>
+      <div class="detail-row"><span class="lbl">Closer</span><span class="val">${j.closer_display || '—'}</span></div>
+      <div class="detail-row"><span class="lbl">Setter</span><span class="val">${j.setter_display || '—'}</span></div>
+      <div class="detail-row"><span class="lbl">Status</span><span class="val">${j.status_label || '—'}</span></div>
+      <div class="detail-row"><span class="lbl">Date Signed</span><span class="val">${fmtDate(j.date_signed)}</span></div>
+      <div class="detail-row"><span class="lbl">Install Date</span><span class="val">${fmtDate(j.install_date)}</span></div>
+    </div>
+
+    <div class="detail-section">
+      <p class="section-title" style="margin-top:0;">System &amp; Finance</p>
+      <div class="detail-row"><span class="lbl">System Size</span><span class="val">${j.system_size_kw ? j.system_size_kw + ' kW' : '—'}</span></div>
+      <div class="detail-row"><span class="lbl"># Batteries</span><span class="val">${j.num_batteries ?? '—'}</span></div>
+      <div class="detail-row"><span class="lbl">Battery Type</span><span class="val">${j.battery_type || '—'}</span></div>
+      <div class="detail-row"><span class="lbl">Annual Production</span><span class="val">${j.annual_production_kwh ? j.annual_production_kwh.toLocaleString() + ' kWh' : '—'}</span></div>
+      <div class="detail-row"><span class="lbl">Total Contract</span><span class="val">${fmtMoney(j.contract_value)}</span></div>
+      <div class="detail-row"><span class="lbl">Monthly Payment</span><span class="val">${fmtMoney(j.monthly_payment)}</span></div>
+      <div class="detail-row"><span class="lbl">Rate per kWh</span><span class="val">${j.rate_per_kwh ?? '—'}</span></div>
+      <div class="detail-row"><span class="lbl">Installer · Financier</span><span class="val">${j.installer_name || '—'} · ${j.financier_name || '—'}</span></div>
+    </div>
+
+    <div class="detail-section">
+      <p class="section-title" style="margin-top:0;">Rep Pay Summary</p>
+      ${j.below_floor ? `<div class="error-msg show">This deal is below the pay-scale floor — pay is pending manual review.</div>` : ''}
+      <div class="detail-row"><span class="lbl">Net PPW</span><span class="val">${j.net_ppw ?? '—'}</span></div>
+      <div class="detail-row"><span class="lbl">Pay Scale</span><span class="val">${j.pay_scale_rate ? '$' + j.pay_scale_rate + '/kW' : '—'}</span></div>
+      ${isCloser ? `
+        <div class="detail-row"><span class="lbl">Gross Pay</span><span class="val">${fmtMoney(j.payGross)}</span></div>
+        <div class="detail-row"><span class="lbl">Cashback Deduction</span><span class="val">−${fmtMoney(j.cashbackDeduction)}</span></div>
+      ` : ''}
+      <div class="detail-row" style="border-top:2px solid var(--brand-ink); padding-top:10px; margin-top:4px;">
+        <span class="lbl" style="font-weight:700; color:var(--brand-ink);">${isCloser ? 'Your Pay (net)' : 'Your Pay'}</span>
+        <span class="val" style="font-size:18px;">${fmtMoney(j.payAmount)}</span>
+      </div>
+      <div class="detail-row"><span class="lbl">Status</span><span class="val">${j.paid ? `✅ Paid ${fmtDate(j.paidDate)}` : '⏳ Not yet paid'}</span></div>
+    </div>
+  `;
+}
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>My Jobs — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/rep/rep.css">
+</head>
+<body>
+<script src="/rep/rep-common.js"></script>
+<script>renderRepShell('/rep/jobs.html');</script>
+<script>
+document.getElementById('pageContent').innerHTML = `
+  <div class="toolbar" style="margin-bottom:12px;">
+    <select id="filterSelect" style="margin:0; width:100%;">
+      <option value="all">All Jobs</option>
+      <option value="active">Active (not yet paid)</option>
+      <option value="paid">Paid</option>
+    </select>
+  </div>
+  <div id="jobsList"></div>
+`;
+
+async function load() {
+  const jobs = await api('GET', '/api/myjobs');
+  const filter = document.getElementById('filterSelect').value;
+  const filtered = jobs.filter((j) => filter === 'all' || (filter === 'paid' ? j.paid : !j.paid));
+  document.getElementById('jobsList').innerHTML = filtered.length === 0
+    ? '<p style="color:var(--brand-muted); text-align:center; margin-top:40px;">No jobs here yet.</p>'
+    : filtered.map((j) => `
+      <div class="job-card" onclick="window.location.href='/rep/job.html?id=${j.id}'">
+        <div class="top-row">
+          <div>
+            <div class="customer">${j.customer_name}</div>
+            <div class="address">${j.customer_address || ''}</div>
+          </div>
+          <span class="badge ${j.viewRole === 'closer' ? 'green' : 'amber'}">${j.viewRole === 'closer' ? 'Final' : 'Setter'}</span>
+        </div>
+        <div class="meta-row">
+          <span>${j.system_size_kw ? j.system_size_kw + ' kW' : ''}</span>
+          <span>${j.status_label || ''}</span>
+          <span>${j.paid ? '✅ Paid' : '⏳ Unpaid'}</span>
+        </div>
+        <div class="pay-amount">${fmtMoney(j.payAmount)}</div>
+      </div>
+    `).join('');
+}
+document.getElementById('filterSelect').addEventListener('change', load);
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>My Commissions — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/rep/rep.css">
+</head>
+<body>
+<script src="/rep/rep-common.js"></script>
+<script>renderRepShell('/rep/commissions.html');</script>
+<script>
+async function load() {
+  const d = await api('GET', '/api/myjobs/commissions');
+  document.getElementById('pageContent').innerHTML = `
+    <div class="kpi-mini-grid">
+      <div class="kpi-mini"><div class="label">This Month</div><div class="value">${fmtMoney(d.totals.thisMonth)}</div></div>
+      <div class="kpi-mini"><div class="label">YTD</div><div class="value">${fmtMoney(d.totals.ytd)}</div></div>
+      <div class="kpi-mini" style="grid-column: span 2;"><div class="label">All-Time Paid</div><div class="value">${fmtMoney(d.totals.allTime)}</div></div>
+    </div>
+    <p class="section-title">Paid History</p>
+    <div id="historyList"></div>
+  `;
+  document.getElementById('historyList').innerHTML = d.history.length === 0
+    ? '<p style="color:var(--brand-muted); text-align:center; margin-top:20px;">No paid commissions yet.</p>'
+    : d.history.map((j) => `
+      <div class="job-card" onclick="window.location.href='/rep/job.html?id=${j.id}'">
+        <div class="top-row">
+          <div>
+            <div class="customer">${j.customer_name}</div>
+            <div class="address">Paid ${fmtDate(j.paidDate)}</div>
+          </div>
+          <span class="badge ${j.viewRole === 'closer' ? 'green' : 'amber'}">${j.viewRole === 'closer' ? 'Final' : 'Setter'}</span>
+        </div>
+        <div class="pay-amount">${fmtMoney(j.payAmount)}</div>
+      </div>
+    `).join('');
+}
+load();
+</script>
+</body>
+</html>

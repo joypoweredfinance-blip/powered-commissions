@@ -1,0 +1,515 @@
+const params = new URLSearchParams(window.location.search);
+const dealId = params.get('id');
+let META = null;
+let DEAL = null;
+let overrideMode = false;
+
+function val(id) { const el = document.getElementById(id); return el ? el.value : null; }
+function intval(id) { const v = val(id); return v === '' || v === null ? null : Number(v); }
+function floatval(id) { const v = val(id); return v === '' || v === null ? null : parseFloat(v); }
+function checked(id) { const el = document.getElementById(id); return el ? el.checked : false; }
+function dateOrNull(v) { return v || null; }
+
+function repOptions(type, selected) {
+  const filtered = META.reps.filter((r) => r.rep_type === type || r.rep_type === 'both');
+  let html = `<option value="">${type === 'setter' ? '— None —' : '— Select —'}</option>`;
+  filtered.forEach((r) => {
+    html += `<option value="${r.id}" ${String(r.id) === String(selected) ? 'selected' : ''}>${r.display_name || r.full_name}</option>`;
+  });
+  return html;
+}
+function selectOptions(list, selected, placeholder, labelKey = 'label') {
+  let html = `<option value="">${placeholder}</option>`;
+  list.forEach((item) => {
+    html += `<option value="${item.id}" ${String(item.id) === String(selected) ? 'selected' : ''}>${item[labelKey] || item.name}</option>`;
+  });
+  return html;
+}
+
+async function init() {
+  META = await api('GET', '/api/meta');
+  if (dealId) {
+    DEAL = await api('GET', `/api/deals/${dealId}`);
+    renderFull();
+  } else {
+    renderCreateForm();
+  }
+}
+
+function renderCreateForm() {
+  document.getElementById('pageContent').innerHTML = `
+    <div class="card" style="max-width:640px;">
+      <p class="section-title">New Deal</p>
+      <label>Customer Name</label><input type="text" id="f_customer_name">
+      <label>Customer Address</label><input type="text" id="f_customer_address">
+      <label>Status</label><select id="f_status_id">${selectOptions(META.statuses, '', 'Select status')}</select>
+      <div class="field-row">
+        <div><label>Closer</label><select id="f_closer_rep_id">${repOptions('closer', '')}</select></div>
+        <div><label>Setter (optional)</label><select id="f_setter_rep_id">${repOptions('setter', '')}</select></div>
+      </div>
+      <div class="field-row">
+        <div><label>System Size (kW)</label><input type="number" step="0.01" id="f_system_size_kw"></div>
+        <div><label>Contract Value ($)</label><input type="number" step="0.01" id="f_contract_value"></div>
+      </div>
+      <button class="btn" id="createBtn">Create Deal</button>
+    </div>
+  `;
+  document.getElementById('createBtn').addEventListener('click', async () => {
+    const data = {
+      customer_name: val('f_customer_name'),
+      customer_address: val('f_customer_address'),
+      status_id: intval('f_status_id'),
+      closer_rep_id: intval('f_closer_rep_id'),
+      setter_rep_id: intval('f_setter_rep_id'),
+      system_size_kw: floatval('f_system_size_kw'),
+      contract_value: floatval('f_contract_value'),
+      pay_split: 0.5
+    };
+    if (!data.customer_name) { alert('Customer name is required.'); return; }
+    try {
+      const deal = await api('POST', '/api/deals', data);
+      window.location.href = `/admin/deal.html?id=${deal.id}`;
+    } catch (e) { alert(e.message); }
+  });
+}
+
+function renderFull() {
+  document.querySelector('.topbar h1').textContent = DEAL.customer_name;
+  document.getElementById('pageContent').innerHTML = `
+    <div class="detail-grid">
+      <div>
+        <div class="card" style="margin-bottom:20px;">
+          <p class="section-title">Project Details</p>
+          <div class="field-row">
+            <div><label>Customer Name</label><input type="text" id="f_customer_name"></div>
+            <div><label>Customer Address</label><input type="text" id="f_customer_address"></div>
+          </div>
+          <div class="field-row">
+            <div><label>Customer Phone</label><input type="text" id="f_customer_phone"></div>
+            <div><label>Status</label><select id="f_status_id"></select></div>
+          </div>
+          <div class="field-row">
+            <div><label>Closer</label><select id="f_closer_rep_id"></select></div>
+            <div><label>Setter (optional)</label><select id="f_setter_rep_id"></select></div>
+          </div>
+          <div class="field-row cols-3">
+            <div><label>Date Signed</label><input type="date" id="f_date_signed"></div>
+            <div><label>Install Date</label><input type="date" id="f_install_date"></div>
+            <div><label>Install Completed</label><input type="date" id="f_install_completed_date"></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px;">
+          <p class="section-title">System &amp; Finance</p>
+          <div class="field-row cols-3">
+            <div><label>Installer</label><select id="f_installer_id"></select></div>
+            <div><label>Financier</label><select id="f_financier_id"></select></div>
+            <div><label>Module Type</label><input type="text" id="f_module_type"></div>
+          </div>
+          <div class="field-row cols-3">
+            <div><label>Battery Type</label><input type="text" id="f_battery_type"></div>
+            <div><label># Batteries</label><input type="number" id="f_num_batteries"></div>
+            <div><label>System Size (kW)</label><input type="number" step="0.01" id="f_system_size_kw"></div>
+          </div>
+          <div class="field-row cols-3">
+            <div><label>Panel Count</label><input type="number" id="f_panel_count"></div>
+            <div><label>Panel Watts</label><input type="number" id="f_panel_watts"></div>
+            <div><label>Annual Production (kWh)</label><input type="number" id="f_annual_production_kwh"></div>
+          </div>
+          <div class="field-row cols-3">
+            <div><label>Contract Value ($)</label><input type="number" step="0.01" id="f_contract_value"></div>
+            <div><label>EPC Rate ($/W, informational)</label><input type="number" step="0.01" id="f_epc_rate_per_watt"></div>
+            <div><label>Monthly Payment ($)</label><input type="number" step="0.01" id="f_monthly_payment"></div>
+          </div>
+          <div class="field-row cols-3">
+            <div><label>Rate per kWh</label><input type="number" step="0.0001" id="f_rate_per_kwh"></div>
+            <div><label>Escalator (%)</label><input type="number" step="0.01" id="f_escalator_pct"></div>
+            <div><label>Cashback Amount ($)</label><input type="number" step="0.01" id="f_cashback_amount"></div>
+          </div>
+          <div class="field-row">
+            <div>
+              <label><input type="checkbox" id="f_is_referral" style="width:auto; margin-right:6px;">Referral deal (75% pay split)</label>
+            </div>
+            <div><label>Pay Split</label><input type="number" step="0.01" id="f_pay_split"></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px;">
+          <p class="section-title">Adders <span style="font-weight:400; text-transform:none; font-size:12px;">— everything here counts toward Net PPW unless "EPC/excluded" is checked</span></p>
+          <div id="addersList"></div>
+          <button class="btn secondary small" id="addAdderBtn">+ Add Line Item</button>
+        </div>
+
+        <div class="card" style="margin-bottom:20px;">
+          <p class="section-title">Milestone Dates</p>
+          <div class="field-row cols-3">
+            <div><label>NTP Approved</label><input type="date" id="f_ntp_approved_date"></div>
+            <div><label>M1 Approved</label><input type="date" id="f_m1_approved_date"></div>
+            <div><label>M1 Paid</label><input type="date" id="f_m1_paid_date"></div>
+          </div>
+          <div class="field-row cols-3">
+            <div><label>PTO Granted</label><input type="date" id="f_pto_granted_date"></div>
+            <div><label>M2 Approved</label><input type="date" id="f_m2_approved_date"></div>
+            <div><label>M2 Paid</label><input type="date" id="f_m2_paid_date"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <p class="section-title">Admin Notes <span style="font-weight:400; text-transform:none;">(never visible to reps)</span></p>
+          <textarea id="f_admin_notes" rows="4"></textarea>
+        </div>
+      </div>
+
+      <div>
+        <div class="card" style="margin-bottom:20px;">
+          <p class="section-title">Commission Calculator</p>
+          <div id="calcLines"></div>
+          <div style="display:flex; gap:8px; margin-top:14px;">
+            <button class="btn secondary small" id="recalcBtn">Recalculate</button>
+            <button class="btn secondary small" id="overrideBtn"></button>
+          </div>
+          <div id="overrideForm" style="display:none; margin-top:14px; border-top:1px solid var(--brand-border); padding-top:14px;"></div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px;">
+          <p class="section-title">Approval Gate</p>
+          <div id="approvalBox"></div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px;">
+          <p class="section-title">Payment Status</p>
+          <div id="paymentBox"></div>
+        </div>
+
+        <div class="card">
+          <p class="section-title">Audit History</p>
+          <div id="auditBox" style="max-height:320px; overflow-y:auto;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="position:sticky; bottom:0; background:#fff; border-top:1px solid var(--brand-border); padding:14px 0; margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
+      <button class="btn secondary small" id="backBtn">Back to Board</button>
+      <button class="btn small" id="saveBtn" style="width:auto;">Save Changes</button>
+    </div>
+  `;
+
+  populateFields();
+  renderAdders();
+  renderCalc();
+  renderApproval();
+  renderPayment();
+  renderAudit();
+  wireEvents();
+}
+
+function populateFields() {
+  const d = DEAL;
+  document.getElementById('f_customer_name').value = d.customer_name || '';
+  document.getElementById('f_customer_address').value = d.customer_address || '';
+  document.getElementById('f_customer_phone').value = d.customer_phone || '';
+  document.getElementById('f_status_id').innerHTML = selectOptions(META.statuses, d.status_id, 'No status');
+  document.getElementById('f_closer_rep_id').innerHTML = repOptions('closer', d.closer_rep_id);
+  document.getElementById('f_setter_rep_id').innerHTML = repOptions('setter', d.setter_rep_id);
+  document.getElementById('f_date_signed').value = (d.date_signed || '').slice(0, 10);
+  document.getElementById('f_install_date').value = (d.install_date || '').slice(0, 10);
+  document.getElementById('f_install_completed_date').value = (d.install_completed_date || '').slice(0, 10);
+
+  document.getElementById('f_installer_id').innerHTML = selectOptions(META.installers, d.installer_id, '— Select —');
+  document.getElementById('f_financier_id').innerHTML = selectOptions(META.financiers, d.financier_id, '— Select —');
+  document.getElementById('f_module_type').value = d.module_type || '';
+  document.getElementById('f_battery_type').value = d.battery_type || '';
+  document.getElementById('f_num_batteries').value = d.num_batteries ?? '';
+  document.getElementById('f_system_size_kw').value = d.system_size_kw ?? '';
+  document.getElementById('f_panel_count').value = d.panel_count ?? '';
+  document.getElementById('f_panel_watts').value = d.panel_watts ?? '';
+  document.getElementById('f_annual_production_kwh').value = d.annual_production_kwh ?? '';
+  document.getElementById('f_contract_value').value = d.contract_value ?? '';
+  document.getElementById('f_epc_rate_per_watt').value = d.epc_rate_per_watt ?? '';
+  document.getElementById('f_monthly_payment').value = d.monthly_payment ?? '';
+  document.getElementById('f_rate_per_kwh').value = d.rate_per_kwh ?? '';
+  document.getElementById('f_escalator_pct').value = d.escalator_pct ?? '';
+  document.getElementById('f_cashback_amount').value = d.cashback_amount ?? '';
+  document.getElementById('f_is_referral').checked = !!d.is_referral;
+  document.getElementById('f_pay_split').value = d.pay_split ?? 0.5;
+
+  document.getElementById('f_ntp_approved_date').value = (d.ntp_approved_date || '').slice(0, 10);
+  document.getElementById('f_m1_approved_date').value = (d.m1_approved_date || '').slice(0, 10);
+  document.getElementById('f_m1_paid_date').value = (d.m1_paid_date || '').slice(0, 10);
+  document.getElementById('f_pto_granted_date').value = (d.pto_granted_date || '').slice(0, 10);
+  document.getElementById('f_m2_approved_date').value = (d.m2_approved_date || '').slice(0, 10);
+  document.getElementById('f_m2_paid_date').value = (d.m2_paid_date || '').slice(0, 10);
+
+  document.getElementById('f_admin_notes').value = d.admin_notes || '';
+}
+
+function renderAdders() {
+  const list = document.getElementById('addersList');
+  if (!DEAL.adders.length) {
+    list.innerHTML = `<p style="color:var(--brand-muted); font-size:13px;">No line items yet — add MPU, battery, re-roof, permits, etc.</p>`;
+  } else {
+    list.innerHTML = DEAL.adders.map((a) => `
+      <div class="adder-row" data-id="${a.id}">
+        <input type="text" class="a-label" value="${(a.label || '').replace(/"/g, '&quot;')}" placeholder="Label">
+        <select class="a-category">
+          ${['mpu', 'battery', 'reroof_sow', 'permit', 'misc', 'other'].map((c) => `<option value="${c}" ${c === a.category ? 'selected' : ''}>${c}</option>`).join('')}
+        </select>
+        <input type="number" step="0.01" class="a-amount" value="${a.amount}">
+        <label style="display:flex; align-items:center; gap:4px; font-size:12px; white-space:nowrap;">
+          <input type="checkbox" class="a-hardcost" ${a.counts_as_hard_cost ? 'checked' : ''} style="width:auto;">Counts toward PPW
+        </label>
+        <button class="icon-btn a-delete" title="Remove">✕</button>
+      </div>
+    `).join('');
+  }
+  list.querySelectorAll('.adder-row').forEach((row) => {
+    const id = row.dataset.id;
+    const save = async () => {
+      try {
+        DEAL = await api('PUT', `/api/deals/${dealId}/adders/${id}`, {
+          label: row.querySelector('.a-label').value,
+          category: row.querySelector('.a-category').value,
+          amount: parseFloat(row.querySelector('.a-amount').value) || 0,
+          counts_as_hard_cost: row.querySelector('.a-hardcost').checked
+        });
+        renderCalc();
+      } catch (e) { alert(e.message); }
+    };
+    row.querySelector('.a-label').addEventListener('blur', save);
+    row.querySelector('.a-category').addEventListener('change', save);
+    row.querySelector('.a-amount').addEventListener('blur', save);
+    row.querySelector('.a-hardcost').addEventListener('change', save);
+    row.querySelector('.a-delete').addEventListener('click', async () => {
+      try {
+        DEAL = await api('DELETE', `/api/deals/${dealId}/adders/${id}`);
+        renderAdders();
+        renderCalc();
+      } catch (e) { alert(e.message); }
+    });
+  });
+}
+
+function calcRow(label, value, opts = {}) {
+  const cls = opts.total ? 'calc-line total' : 'calc-line';
+  return `<div class="${cls}"><span class="lbl">${label}</span><span class="val">${value}</span></div>`;
+}
+
+function renderCalc() {
+  const d = DEAL;
+  let html = '';
+  if (d.below_floor) {
+    html += `<div class="error-msg show" style="margin-bottom:14px;">Below the pay-scale hard floor — needs manual approval before any commission is paid.</div>`;
+  }
+  html += calcRow('Net PPW', d.net_ppw ?? '—');
+  html += calcRow('Pay Scale Rate', d.pay_scale_rate ? `$${d.pay_scale_rate}/kW` : '—');
+  html += calcRow('Rep Pool', fmtMoney(d.rep_pool));
+  html += calcRow('Closer Pay (gross)', fmtMoney(d.closer_pay_gross));
+  html += calcRow('Cashback Deduction', d.cashback_amount ? `−${fmtMoney(d.cashback_amount * 0.5)}` : '$0.00');
+  html += calcRow('Closer Pay (net)', fmtMoney(d.closer_pay_net), { total: true });
+  if (d.setter_rep_id) html += calcRow('Setter Pay', fmtMoney(d.setter_pay), { total: true });
+  if (d.manual_override) {
+    html += `<div class="badge amber" style="margin-top:10px;">Manual override active${d.override_reason ? ': ' + d.override_reason : ''}</div>`;
+  }
+  document.getElementById('calcLines').innerHTML = html;
+  document.getElementById('overrideBtn').textContent = d.manual_override ? 'Edit Override' : 'Manual Override';
+}
+
+function renderApproval() {
+  const d = DEAL;
+  let html = '';
+  if (d.closer_rep_id) {
+    html += `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--brand-border);">
+        <div><strong>Closer</strong> — ${d.closer_display || d.closer_name}<br>${d.closer_breakdown_approved ? '<span class="badge green">Approved for view</span>' : '<span class="badge muted">Not visible to rep</span>'}</div>
+        <button class="btn ${d.closer_breakdown_approved ? 'secondary' : ''} small" id="toggleCloserApproval">${d.closer_breakdown_approved ? 'Revoke' : 'Approve'}</button>
+      </div>`;
+  }
+  if (d.setter_rep_id) {
+    html += `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0;">
+        <div><strong>Setter</strong> — ${d.setter_display || d.setter_name}<br>${d.setter_breakdown_approved ? '<span class="badge amber">Approved for view</span>' : '<span class="badge muted">Not visible to rep</span>'}</div>
+        <button class="btn ${d.setter_breakdown_approved ? 'secondary' : ''} small" id="toggleSetterApproval">${d.setter_breakdown_approved ? 'Revoke' : 'Approve'}</button>
+      </div>`;
+  }
+  if (!html) html = '<p style="color:var(--brand-muted); font-size:13px;">Assign a closer or setter to enable approval.</p>';
+  document.getElementById('approvalBox').innerHTML = html;
+
+  const c = document.getElementById('toggleCloserApproval');
+  if (c) c.addEventListener('click', () => setApproval('closer', !d.closer_breakdown_approved));
+  const s = document.getElementById('toggleSetterApproval');
+  if (s) s.addEventListener('click', () => setApproval('setter', !d.setter_breakdown_approved));
+}
+
+async function setApproval(role, approved) {
+  try {
+    DEAL = await api('POST', `/api/deals/${dealId}/approve`, { role, approved });
+    renderApproval();
+  } catch (e) { alert(e.message); }
+}
+
+function paymentRow(label, recipient, paid, amount, dateField) {
+  return `
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--brand-border);">
+      <div><strong>${label}</strong> ${amount !== undefined ? `— ${fmtMoney(amount)}` : ''}</div>
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px;">
+        <input type="checkbox" class="pay-toggle" data-recipient="${recipient}" ${paid ? 'checked' : ''} style="width:auto;"> Paid
+      </label>
+    </div>`;
+}
+
+function renderPayment() {
+  const d = DEAL;
+  let html = '';
+  if (d.closer_rep_id) html += paymentRow('Closer', 'closer', d.closer_paid, d.closer_pay_net);
+  if (d.setter_rep_id) html += paymentRow('Setter', 'setter', d.setter_paid, d.setter_pay);
+  html += `<p class="section-title" style="margin-top:16px;">Internal Payroll (admin only)</p>`;
+  html += paymentRow('Owner M1 (Etai + Noy)', 'owner_m1', d.owner_m1_paid, d.owner_etai_total + d.owner_noy_total);
+  html += paymentRow('Owner M2 (Etai + Noy)', 'owner_m2', d.owner_m2_paid, undefined);
+  html += paymentRow("Joey's M2 Bonus", 'joey', d.joey_paid, d.joey_m2_bonus);
+  document.getElementById('paymentBox').innerHTML = html;
+  document.querySelectorAll('.pay-toggle').forEach((box) => {
+    box.addEventListener('change', async () => {
+      try {
+        DEAL = await api('POST', `/api/deals/${dealId}/payment`, { recipient: box.dataset.recipient, paid: box.checked });
+        renderPayment();
+      } catch (e) { alert(e.message); }
+    });
+  });
+}
+
+function renderAudit() {
+  const log = DEAL.auditLog || [];
+  if (!log.length) {
+    document.getElementById('auditBox').innerHTML = '<p style="color:var(--brand-muted); font-size:13px;">No changes logged yet.</p>';
+    return;
+  }
+  document.getElementById('auditBox').innerHTML = log.map((entry) => `
+    <div class="audit-item">
+      <strong>${entry.field_name}</strong>: ${entry.old_value ?? '∅'} → ${entry.new_value ?? '∅'}
+      <div class="meta">${entry.changed_by_email || 'system'} · ${new Date(entry.changed_at).toLocaleString()}${entry.reason ? ' · ' + entry.reason : ''}</div>
+    </div>
+  `).join('');
+}
+
+function wireEvents() {
+  document.getElementById('f_is_referral').addEventListener('change', (e) => {
+    document.getElementById('f_pay_split').value = e.target.checked ? 0.75 : 0.50;
+  });
+
+  document.getElementById('addAdderBtn').addEventListener('click', async () => {
+    try {
+      DEAL = await api('POST', `/api/deals/${dealId}/adders`, { label: 'New item', category: 'misc', amount: 0, counts_as_hard_cost: true });
+      renderAdders();
+      renderCalc();
+    } catch (e) { alert(e.message); }
+  });
+
+  document.getElementById('recalcBtn').addEventListener('click', async () => {
+    try {
+      DEAL = await api('POST', `/api/deals/${dealId}/recalculate`, { force: true });
+      renderCalc();
+    } catch (e) { alert(e.message); }
+  });
+
+  document.getElementById('overrideBtn').addEventListener('click', () => {
+    overrideMode = !overrideMode;
+    const box = document.getElementById('overrideForm');
+    if (!overrideMode) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    const d = DEAL;
+    box.style.display = 'block';
+    box.innerHTML = `
+      <label>Net PPW</label><input type="number" step="0.0001" id="ov_net_ppw" value="${d.net_ppw ?? ''}">
+      <label>Pay Scale Rate ($/kW)</label><input type="number" step="0.01" id="ov_pay_scale_rate" value="${d.pay_scale_rate ?? ''}">
+      <label>Closer Pay (net)</label><input type="number" step="0.01" id="ov_closer_pay_net" value="${d.closer_pay_net ?? ''}">
+      <label>Setter Pay</label><input type="number" step="0.01" id="ov_setter_pay" value="${d.setter_pay ?? ''}">
+      <label>Reason for override (required)</label><textarea id="ov_reason" rows="2"></textarea>
+      <div style="display:flex; gap:8px;">
+        <button class="btn small" id="saveOverrideBtn" style="width:auto;">Save Override</button>
+        ${d.manual_override ? '<button class="btn secondary small" id="clearOverrideBtn" style="width:auto;">Turn Off &amp; Recalculate</button>' : ''}
+      </div>
+    `;
+    document.getElementById('saveOverrideBtn').addEventListener('click', async () => {
+      const reason = val('ov_reason');
+      if (!reason) { alert('Please give a reason for the override — this is logged for the audit trail.'); return; }
+      try {
+        DEAL = await api('POST', `/api/deals/${dealId}/override`, {
+          override: true,
+          reason,
+          fields: {
+            net_ppw: floatval('ov_net_ppw'),
+            pay_scale_rate: floatval('ov_pay_scale_rate'),
+            closer_pay_net: floatval('ov_closer_pay_net'),
+            setter_pay: floatval('ov_setter_pay')
+          }
+        });
+        overrideMode = false;
+        box.style.display = 'none';
+        renderCalc();
+        renderAudit();
+      } catch (e) { alert(e.message); }
+    });
+    const clearBtn = document.getElementById('clearOverrideBtn');
+    if (clearBtn) clearBtn.addEventListener('click', async () => {
+      try {
+        DEAL = await api('POST', `/api/deals/${dealId}/override`, { override: false, reason: 'Override removed' });
+        DEAL = await api('POST', `/api/deals/${dealId}/recalculate`, { force: true });
+        overrideMode = false;
+        box.style.display = 'none';
+        renderCalc();
+        renderAudit();
+      } catch (e) { alert(e.message); }
+    });
+  });
+
+  document.getElementById('backBtn').addEventListener('click', () => { window.location.href = '/admin/board.html'; });
+
+  document.getElementById('saveBtn').addEventListener('click', async () => {
+    const data = {
+      customer_name: val('f_customer_name'),
+      customer_address: val('f_customer_address'),
+      customer_phone: val('f_customer_phone'),
+      status_id: intval('f_status_id'),
+      closer_rep_id: intval('f_closer_rep_id'),
+      setter_rep_id: intval('f_setter_rep_id'),
+      date_signed: dateOrNull(val('f_date_signed')),
+      install_date: dateOrNull(val('f_install_date')),
+      install_completed_date: dateOrNull(val('f_install_completed_date')),
+      installer_id: intval('f_installer_id'),
+      financier_id: intval('f_financier_id'),
+      module_type: val('f_module_type'),
+      battery_type: val('f_battery_type'),
+      num_batteries: intval('f_num_batteries'),
+      system_size_kw: floatval('f_system_size_kw'),
+      panel_count: intval('f_panel_count'),
+      panel_watts: floatval('f_panel_watts'),
+      annual_production_kwh: floatval('f_annual_production_kwh'),
+      contract_value: floatval('f_contract_value'),
+      epc_rate_per_watt: floatval('f_epc_rate_per_watt'),
+      monthly_payment: floatval('f_monthly_payment'),
+      rate_per_kwh: floatval('f_rate_per_kwh'),
+      escalator_pct: floatval('f_escalator_pct'),
+      cashback_amount: floatval('f_cashback_amount'),
+      is_referral: checked('f_is_referral'),
+      pay_split: floatval('f_pay_split'),
+      ntp_approved_date: dateOrNull(val('f_ntp_approved_date')),
+      m1_approved_date: dateOrNull(val('f_m1_approved_date')),
+      m1_paid_date: dateOrNull(val('f_m1_paid_date')),
+      pto_granted_date: dateOrNull(val('f_pto_granted_date')),
+      m2_approved_date: dateOrNull(val('f_m2_approved_date')),
+      m2_paid_date: dateOrNull(val('f_m2_paid_date')),
+      admin_notes: val('f_admin_notes')
+    };
+    try {
+      DEAL = await api('PUT', `/api/deals/${dealId}`, data);
+      document.querySelector('.topbar h1').textContent = DEAL.customer_name;
+      renderCalc();
+      renderApproval();
+      renderPayment();
+      renderAudit();
+      document.getElementById('saveBtn').textContent = 'Saved ✓';
+      setTimeout(() => { document.getElementById('saveBtn').textContent = 'Save Changes'; }, 1500);
+    } catch (e) { alert(e.message); }
+  });
+}
+
+init();

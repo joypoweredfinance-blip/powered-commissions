@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Audit Log — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+<script src="/admin/admin-common.js"></script>
+<script>renderAdminShell('/admin/audit.html', 'Audit Log');</script>
+<script>
+document.getElementById('pageContent').innerHTML = `
+  <div class="toolbar">
+    <select id="tableFilter">
+      <option value="">All records</option>
+      <option value="deals">Deals</option>
+      <option value="deal_adders">Adders</option>
+      <option value="reps">Reps</option>
+      <option value="payroll_staff">Payroll Staff</option>
+      <option value="advances">Advances</option>
+      <option value="clawbacks">Clawbacks</option>
+      <option value="commission_settings">Commission Settings</option>
+      <option value="pay_scales">Pay Scales</option>
+      <option value="pay_scale_tiers">Pay Scale Tiers</option>
+    </select>
+  </div>
+  <div class="card" id="auditList"></div>
+`;
+
+async function load() {
+  const table = document.getElementById('tableFilter').value;
+  const params = table ? `?table=${table}` : '';
+  const rows = await api('GET', `/api/audit${params}`);
+  document.getElementById('auditList').innerHTML = rows.length === 0
+    ? '<p style="color:var(--brand-muted);">No activity yet.</p>'
+    : rows.map((r) => `
+      <div class="audit-item">
+        <strong>${r.table_name}</strong> #${r.record_id} — <strong>${r.field_name}</strong>: ${r.old_value ?? '∅'} → ${r.new_value ?? '∅'}
+        <div class="meta">${r.changed_by_email || 'system'} · ${new Date(r.changed_at).toLocaleString()}${r.reason ? ' · ' + r.reason : ''}</div>
+      </div>
+    `).join('');
+}
+
+document.getElementById('tableFilter').addEventListener('change', load);
+load();
+</script>
+</body>
+</html>

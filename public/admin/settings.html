@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Commission Rules — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+<script src="/admin/admin-common.js"></script>
+<script>renderAdminShell('/admin/settings.html', 'Commission Rules');</script>
+<script>
+let DATA = null;
+
+document.getElementById('pageContent').innerHTML = `
+  <div id="scalesArea"></div>
+  <div class="card" style="margin-top:20px;">
+    <p class="section-title">Splits &amp; Settings</p>
+    <div class="field-row cols-3">
+      <div><label>Default Pay Split</label><input type="number" step="0.01" id="s_default_pay_split"></div>
+      <div><label>Referral Pay Split</label><input type="number" step="0.01" id="s_referral_pay_split"></div>
+      <div><label>Cashback Split (closer share)</label><input type="number" step="0.01" id="s_cashback_split_pct"></div>
+    </div>
+    <div class="field-row cols-3">
+      <div><label>Setter Split %</label><input type="number" step="0.01" id="s_setter_split_pct"></div>
+      <div><label>Closer Split %</label><input type="number" step="0.01" id="s_closer_split_pct"></div>
+      <div><label>Closer 20% Clawback (PSS/SoCal)</label><input type="number" step="0.01" id="s_closer_clawback_pct_pss_socal"></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:20px;">
+    <p class="section-title">Owner Distributions (Etai &amp; Noy) — admin/payroll-staff only</p>
+    <div class="field-row cols-3">
+      <div><label>Etai — M1 ($)</label><input type="number" step="0.01" id="s_owner_etai_m1"></div>
+      <div><label>Etai — M2 ($)</label><input type="number" step="0.01" id="s_owner_etai_m2"></div>
+      <div></div>
+    </div>
+    <div class="field-row cols-3">
+      <div><label>Noy — M1 ($)</label><input type="number" step="0.01" id="s_owner_noy_m1"></div>
+      <div><label>Noy — M2 ($)</label><input type="number" step="0.01" id="s_owner_noy_m2"></div>
+      <div></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:20px;">
+    <p class="section-title">Joey (PM) — admin/payroll-staff only</p>
+    <div class="field-row cols-3">
+      <div><label>Weekly Salary ($)</label><input type="number" step="0.01" id="s_joey_weekly_salary"></div>
+      <div></div><div></div>
+    </div>
+    <div class="field-row cols-3">
+      <div><label>Tier 1 Max PPW (3.15–x)</label><input type="number" step="0.01" id="s_joey_tier1_max"></div>
+      <div><label>Tier 1 Amount ($)</label><input type="number" step="0.01" id="s_joey_tier1_amt"></div>
+      <div></div>
+    </div>
+    <div class="field-row cols-3">
+      <div><label>Tier 2 Max PPW</label><input type="number" step="0.01" id="s_joey_tier2_max"></div>
+      <div><label>Tier 2 Amount ($)</label><input type="number" step="0.01" id="s_joey_tier2_amt"></div>
+      <div><label>Tier 3 Amount ($, above Tier 2)</label><input type="number" step="0.01" id="s_joey_tier3_amt"></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:20px;">
+    <p class="section-title">Austin (Ops) — admin/payroll-staff only</p>
+    <div class="field-row">
+      <div><label>Base Pay ($/month)</label><input type="number" step="0.01" id="s_austin_base"></div>
+      <div><label>Rate ($/kW installed/month)</label><input type="number" step="0.01" id="s_austin_rate_per_kw"></div>
+    </div>
+  </div>
+  <button class="btn small" id="saveSettingsBtn" style="width:auto; margin-top:16px;">Save All Settings</button>
+`;
+
+function renderScales() {
+  document.getElementById('scalesArea').innerHTML = DATA.payScales.map((scale) => `
+    <div class="card" style="margin-bottom:16px;">
+      <p class="section-title">${scale.name}</p>
+      <div class="field-row">
+        <div><label>Hard Floor (Net PPW)</label><input type="number" step="0.01" class="floor-input" data-scale="${scale.id}" value="${scale.hard_floor_ppw}"></div>
+        <div><label>Rounding Rule</label><select class="rounding-input" data-scale="${scale.id}">
+          <option value="round_down" ${scale.rounding_rule === 'round_down' ? 'selected' : ''}>Round DOWN (lower tier)</option>
+          <option value="round_up" ${scale.rounding_rule === 'round_up' ? 'selected' : ''}>Round UP (higher tier)</option>
+        </select></div>
+      </div>
+      <table class="data-table" style="margin-top:10px;">
+        <thead><tr><th>Net PPW Threshold</th><th>$ per kW</th><th></th></tr></thead>
+        <tbody>
+          ${scale.tiers.map((t) => `
+            <tr data-tier="${t.id}">
+              <td><input type="number" step="0.01" class="tier-threshold" value="${t.net_ppw_threshold}" style="margin:0;"></td>
+              <td><input type="number" step="1" class="tier-rate" value="${t.dollar_per_kw}" style="margin:0;"></td>
+              <td><button class="icon-btn tier-delete">✕</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <input type="number" step="0.01" class="new-tier-threshold" placeholder="New threshold" style="margin:0; max-width:160px;">
+        <input type="number" step="1" class="new-tier-rate" placeholder="$/kW" style="margin:0; max-width:120px;">
+        <button class="btn secondary small add-tier-btn" data-scale="${scale.id}" style="width:auto;">+ Add Tier</button>
+      </div>
+    </div>
+  `).join('');
+
+  document.querySelectorAll('.floor-input').forEach((el) => el.addEventListener('blur', async () => {
+    try { await api('PUT', `/api/settings/pay-scales/${el.dataset.scale}`, { hard_floor_ppw: parseFloat(el.value) }); } catch (e) { alert(e.message); }
+  }));
+  document.querySelectorAll('.rounding-input').forEach((el) => el.addEventListener('change', async () => {
+    try { await api('PUT', `/api/settings/pay-scales/${el.dataset.scale}`, { rounding_rule: el.value }); } catch (e) { alert(e.message); }
+  }));
+  document.querySelectorAll('tr[data-tier]').forEach((row) => {
+    const id = row.dataset.tier;
+    const save = async () => {
+      try {
+        await api('PUT', `/api/settings/tiers/${id}`, {
+          net_ppw_threshold: parseFloat(row.querySelector('.tier-threshold').value),
+          dollar_per_kw: parseFloat(row.querySelector('.tier-rate').value)
+        });
+      } catch (e) { alert(e.message); }
+    };
+    row.querySelector('.tier-threshold').addEventListener('blur', save);
+    row.querySelector('.tier-rate').addEventListener('blur', save);
+    row.querySelector('.tier-delete').addEventListener('click', async () => {
+      try { await api('DELETE', `/api/settings/tiers/${id}`); await reload(); } catch (e) { alert(e.message); }
+    });
+  });
+  document.querySelectorAll('.add-tier-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const card = btn.closest('.card');
+      const threshold = parseFloat(card.querySelector('.new-tier-threshold').value);
+      const rate = parseFloat(card.querySelector('.new-tier-rate').value);
+      if (isNaN(threshold) || isNaN(rate)) { alert('Enter both a threshold and a $/kW rate.'); return; }
+      try {
+        await api('POST', `/api/settings/pay-scales/${btn.dataset.scale}/tiers`, { net_ppw_threshold: threshold, dollar_per_kw: rate });
+        await reload();
+      } catch (e) { alert(e.message); }
+    });
+  });
+}
+
+function populateSettings() {
+  const s = DATA.commissionSettings;
+  Object.keys(s).forEach((key) => {
+    const el = document.getElementById(`s_${key}`);
+    if (el) el.value = s[key];
+  });
+}
+
+async function reload() {
+  DATA = await api('GET', '/api/settings');
+  renderScales();
+  populateSettings();
+}
+
+document.getElementById('saveSettingsBtn').addEventListener('click', async () => {
+  const fields = [
+    'default_pay_split', 'referral_pay_split', 'setter_split_pct', 'closer_split_pct', 'cashback_split_pct',
+    'closer_clawback_pct_pss_socal', 'owner_etai_m1', 'owner_etai_m2', 'owner_noy_m1', 'owner_noy_m2',
+    'joey_weekly_salary', 'joey_tier1_max', 'joey_tier1_amt', 'joey_tier2_max', 'joey_tier2_amt', 'joey_tier3_amt',
+    'austin_base', 'austin_rate_per_kw'
+  ];
+  const body = {};
+  fields.forEach((f) => { body[f] = parseFloat(document.getElementById(`s_${f}`).value); });
+  try {
+    await api('PUT', '/api/settings/commission', body);
+    document.getElementById('saveSettingsBtn').textContent = 'Saved ✓';
+    setTimeout(() => { document.getElementById('saveSettingsBtn').textContent = 'Save All Settings'; }, 1500);
+  } catch (e) { alert(e.message); }
+});
+
+reload();
+</script>
+</body>
+</html>

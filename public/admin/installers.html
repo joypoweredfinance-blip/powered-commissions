@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Installers & Financiers — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+<script src="/admin/admin-common.js"></script>
+<script>renderAdminShell('/admin/installers.html', 'Installers & Financiers');</script>
+<script>
+document.getElementById('pageContent').innerHTML = `
+  <div class="detail-grid">
+    <div>
+      <div class="card" style="margin-bottom:16px;">
+        <p class="section-title">Installers</p>
+        <table class="data-table">
+          <thead><tr><th>Name</th><th>Rate/W</th><th>M1%</th><th>M2%</th><th>Notes</th></tr></thead>
+          <tbody id="installersBody"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <p class="section-title">Add Installer</p>
+        <div class="field-row cols-3">
+          <div><label>Name</label><input type="text" id="ni_name"></div>
+          <div><label>Rate ($/W)</label><input type="number" step="0.01" id="ni_rate"></div>
+          <div></div>
+        </div>
+        <div class="field-row">
+          <div><label>M1 %</label><input type="number" step="0.01" id="ni_m1"></div>
+          <div><label>M2 %</label><input type="number" step="0.01" id="ni_m2"></div>
+        </div>
+        <label>Notes</label><input type="text" id="ni_notes">
+        <button class="btn small" id="addInstallerBtn" style="width:auto;">Add Installer</button>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:16px;">
+        <p class="section-title">Financiers</p>
+        <table class="data-table">
+          <thead><tr><th>Name</th><th>Min FICO</th><th>Notes</th></tr></thead>
+          <tbody id="financiersBody"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <p class="section-title">Add Financier</p>
+        <label>Name</label><input type="text" id="nf_name">
+        <label>Min FICO</label><input type="number" id="nf_fico">
+        <label>Notes</label><input type="text" id="nf_notes">
+        <button class="btn small" id="addFinancierBtn" style="width:auto;">Add Financier</button>
+      </div>
+    </div>
+  </div>
+`;
+
+async function loadAll() {
+  const data = await api('GET', '/api/reference');
+  document.getElementById('installersBody').innerHTML = data.installers.map((i) => `
+    <tr>
+      <td><strong>${i.name}</strong>${i.active ? '' : ' <span class="badge muted">inactive</span>'}</td>
+      <td>${i.rate_per_watt ?? '—'}</td>
+      <td>${i.m1_pct !== null ? (i.m1_pct * 100) + '%' : '—'}</td>
+      <td>${i.m2_pct !== null ? (i.m2_pct * 100) + '%' : '—'}</td>
+      <td style="color:var(--brand-muted); font-size:13px;">${i.notes || ''}</td>
+    </tr>
+  `).join('');
+  document.getElementById('financiersBody').innerHTML = data.financiers.map((f) => `
+    <tr>
+      <td><strong>${f.name}</strong>${f.active ? '' : ' <span class="badge muted">inactive</span>'}</td>
+      <td>${f.min_fico ?? '—'}</td>
+      <td style="color:var(--brand-muted); font-size:13px;">${f.notes || ''}</td>
+    </tr>
+  `).join('');
+}
+
+document.getElementById('addInstallerBtn').addEventListener('click', async () => {
+  const name = document.getElementById('ni_name').value.trim();
+  if (!name) { alert('Name is required.'); return; }
+  try {
+    await api('POST', '/api/reference/installers', {
+      name,
+      rate_per_watt: parseFloat(document.getElementById('ni_rate').value) || null,
+      m1_pct: parseFloat(document.getElementById('ni_m1').value) || null,
+      m2_pct: parseFloat(document.getElementById('ni_m2').value) || null,
+      notes: document.getElementById('ni_notes').value.trim() || null
+    });
+    ['ni_name', 'ni_rate', 'ni_m1', 'ni_m2', 'ni_notes'].forEach((id) => { document.getElementById(id).value = ''; });
+    loadAll();
+  } catch (e) { alert(e.message); }
+});
+
+document.getElementById('addFinancierBtn').addEventListener('click', async () => {
+  const name = document.getElementById('nf_name').value.trim();
+  if (!name) { alert('Name is required.'); return; }
+  try {
+    await api('POST', '/api/reference/financiers', {
+      name,
+      min_fico: parseInt(document.getElementById('nf_fico').value) || null,
+      notes: document.getElementById('nf_notes').value.trim() || null
+    });
+    ['nf_name', 'nf_fico', 'nf_notes'].forEach((id) => { document.getElementById(id).value = ''; });
+    loadAll();
+  } catch (e) { alert(e.message); }
+});
+
+loadAll();
+</script>
+</body>
+</html>

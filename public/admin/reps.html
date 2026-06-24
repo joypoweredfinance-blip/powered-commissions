@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Sales Reps — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+<script src="/admin/admin-common.js"></script>
+<script>renderAdminShell('/admin/reps.html', 'Sales Reps');</script>
+<script>
+let SCALES = [];
+
+document.getElementById('pageContent').innerHTML = `
+  <div class="toolbar">
+    <button class="btn small" id="addRepBtn" style="width:auto; margin-left:auto;">+ Add Rep</button>
+  </div>
+  <div class="card" id="addRepCard" style="display:none; margin-bottom:16px; max-width:480px;">
+    <p class="section-title">New Rep</p>
+    <label>Full Name</label><input type="text" id="nr_full_name">
+    <label>Display Name (short, e.g. "Roy F")</label><input type="text" id="nr_display_name">
+    <div class="field-row">
+      <div><label>Type</label><select id="nr_rep_type"><option value="closer">Closer</option><option value="setter">Setter</option><option value="both">Both</option></select></div>
+      <div><label>Pay Scale</label><select id="nr_pay_scale_id"></select></div>
+    </div>
+    <label>Email (optional, can add later)</label><input type="email" id="nr_email">
+    <div style="display:flex; gap:8px;">
+      <button class="btn small" id="saveRepBtn" style="width:auto;">Save Rep</button>
+      <button class="btn secondary small" id="cancelRepBtn" style="width:auto;">Cancel</button>
+    </div>
+  </div>
+  <div class="card" style="overflow-x:auto;">
+    <table class="data-table">
+      <thead><tr><th>Name</th><th>Type</th><th>Pay Scale</th><th>Login</th><th>Status</th><th></th></tr></thead>
+      <tbody id="repsBody"></tbody>
+    </table>
+  </div>
+`;
+
+async function loadScales() {
+  const settings = await api('GET', '/api/settings');
+  SCALES = settings.payScales;
+  document.getElementById('nr_pay_scale_id').innerHTML = SCALES.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+}
+
+function scaleSelect(repId, currentScaleId) {
+  return `<select class="scale-select" data-id="${repId}">
+    ${SCALES.map((s) => `<option value="${s.id}" ${s.id === currentScaleId ? 'selected' : ''}>${s.name}</option>`).join('')}
+  </select>`;
+}
+
+async function loadReps() {
+  const reps = await api('GET', '/api/reps');
+  document.getElementById('repsBody').innerHTML = reps.map((r) => `
+    <tr data-id="${r.id}">
+      <td><a href="/admin/rep-dashboard.html?id=${r.id}"><strong>${r.full_name}</strong></a>${r.display_name ? `<br><span style="color:var(--brand-muted); font-size:12px;">${r.display_name}</span>` : ''}</td>
+      <td>${r.rep_type}</td>
+      <td>${scaleSelect(r.id, r.pay_scale_id)}</td>
+      <td>${r.login_email ? `<span class="badge green">${r.login_email}</span>` : `<button class="btn secondary small create-login-btn" data-id="${r.id}" style="width:auto;">Create Login</button>`}</td>
+      <td>${r.active ? '<span class="badge green">Active</span>' : '<span class="badge muted">Inactive</span>'}</td>
+      <td><button class="btn secondary small toggle-active-btn" data-id="${r.id}" data-active="${r.active}" style="width:auto;">${r.active ? 'Deactivate' : 'Reactivate'}</button></td>
+    </tr>
+  `).join('');
+
+  document.querySelectorAll('.scale-select').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      try { await api('PUT', `/api/reps/${sel.dataset.id}`, { pay_scale_id: Number(sel.value) }); } catch (e) { alert(e.message); }
+    });
+  });
+  document.querySelectorAll('.create-login-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const email = prompt('Email for this rep\'s login:');
+      if (!email) return;
+      try {
+        const result = await api('POST', `/api/reps/${btn.dataset.id}/create-login`, { email });
+        alert(`Login created.\n\nEmail: ${result.email}\nTemporary password: ${result.tempPassword}\n\nShare these with the rep — they'll be asked to set their own password on first login.`);
+        loadReps();
+      } catch (e) { alert(e.message); }
+    });
+  });
+  document.querySelectorAll('.toggle-active-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await api('PUT', `/api/reps/${btn.dataset.id}`, { active: btn.dataset.active === '1' ? 0 : 1 });
+        loadReps();
+      } catch (e) { alert(e.message); }
+    });
+  });
+}
+
+document.getElementById('addRepBtn').addEventListener('click', () => {
+  document.getElementById('addRepCard').style.display = 'block';
+});
+document.getElementById('cancelRepBtn').addEventListener('click', () => {
+  document.getElementById('addRepCard').style.display = 'none';
+});
+document.getElementById('saveRepBtn').addEventListener('click', async () => {
+  const full_name = document.getElementById('nr_full_name').value.trim();
+  if (!full_name) { alert('Full name is required.'); return; }
+  try {
+    await api('POST', '/api/reps', {
+      full_name,
+      display_name: document.getElementById('nr_display_name').value.trim() || null,
+      rep_type: document.getElementById('nr_rep_type').value,
+      pay_scale_id: Number(document.getElementById('nr_pay_scale_id').value),
+      email: document.getElementById('nr_email').value.trim() || null
+    });
+    document.getElementById('addRepCard').style.display = 'none';
+    document.getElementById('nr_full_name').value = '';
+    document.getElementById('nr_display_name').value = '';
+    document.getElementById('nr_email').value = '';
+    loadReps();
+  } catch (e) { alert(e.message); }
+});
+
+loadScales().then(loadReps);
+</script>
+</body>
+</html>

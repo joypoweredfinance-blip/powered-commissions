@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Dashboard — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/admin/admin.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<script src="/admin/admin-common.js"></script>
+<script>renderAdminShell('/admin/dashboard.html', 'Dashboard');</script>
+<script src="/shared/charts.js"></script>
+<script>
+document.getElementById('pageContent').innerHTML = `
+  <div class="kpi-grid" id="kpiGrid"></div>
+  <div class="detail-grid">
+    <div>
+      <div class="card" style="margin-bottom:20px;">
+        <p class="section-title">Commissions Paid — Last 6 Months</p>
+        <div style="height:240px;"><canvas id="trendChart"></canvas></div>
+      </div>
+      <div class="card">
+        <p class="section-title">Pipeline by Status</p>
+        <div style="height:420px;"><canvas id="funnelChart"></canvas></div>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:20px;">
+        <p class="section-title">Rep Leaderboard</p>
+        <div id="leaderboard"></div>
+      </div>
+      <div class="card">
+        <p class="section-title">Recent Activity</p>
+        <div id="activity" style="max-height:360px; overflow-y:auto;"></div>
+      </div>
+    </div>
+  </div>
+`;
+
+function kpiCard(label, value, sub) {
+  return `<div class="kpi-card"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+}
+
+async function load() {
+  const d = await api('GET', '/api/dashboard/overall');
+  const k = d.kpis;
+  document.getElementById('kpiGrid').innerHTML = [
+    kpiCard('Active Deals', k.activeDeals, `${k.totalDeals} total all-time`),
+    kpiCard('Funded This Month', k.fundedThisMonth, `${k.fundedYTD} YTD`),
+    kpiCard('Commissions Paid', fmtMoney(k.paidThisMonth), `${fmtMoney(k.paidYTD)} YTD`),
+    kpiCard('Pending Approval', fmtMoney(k.pendingApproval), 'not yet visible to reps'),
+    kpiCard('Outstanding Advances', fmtMoney(k.outstandingAdvances)),
+    kpiCard('Open Clawbacks', k.openClawbackCount, fmtMoney(k.openClawbackTotal))
+  ].join('');
+
+  renderTrendChart('trendChart', d.monthlyTrend, { color: '#6B3FD4', label: 'Commissions Paid' });
+  renderFunnelChart('funnelChart', d.pipeline);
+
+  document.getElementById('leaderboard').innerHTML = d.leaderboard.length === 0
+    ? '<p style="color:var(--brand-muted); font-size:13px;">No paid commissions yet.</p>'
+    : d.leaderboard.map((r, i) => `
+      <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--brand-border);">
+        <span>${i + 1}. ${r.name}</span>
+        <strong>${fmtMoney(r.total)}</strong>
+      </div>
+    `).join('');
+
+  document.getElementById('activity').innerHTML = d.recentActivity.length === 0
+    ? '<p style="color:var(--brand-muted); font-size:13px;">No activity yet.</p>'
+    : d.recentActivity.map((a) => `
+      <div class="audit-item">
+        ${a.customer_name ? `<strong>${a.customer_name}</strong> — ` : ''}${a.field_name.replace(/_/g, ' ')}: ${a.old_value} → ${a.new_value}
+        <div class="meta">${a.changed_by_email || 'system'} · ${new Date(a.changed_at).toLocaleString()}</div>
+      </div>
+    `).join('');
+}
+
+load();
+</script>
+</body>
+</html>

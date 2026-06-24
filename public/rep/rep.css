@@ -1,0 +1,86 @@
+.rep-shell {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--brand-bg);
+}
+.rep-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  background: #fff;
+  border-bottom: 1px solid var(--brand-border);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.rep-content {
+  flex: 1;
+  padding: 16px 16px 90px;
+}
+.rep-tabbar {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  background: #fff;
+  border-top: 1px solid var(--brand-border);
+  display: flex;
+  padding: 8px 6px calc(8px + env(safe-area-inset-bottom));
+  z-index: 10;
+}
+.rep-tabbar .tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--brand-muted);
+  padding: 6px 0;
+  border-radius: 10px;
+}
+.rep-tabbar .tab .ico { font-size: 18px; }
+.rep-tabbar .tab.active { color: var(--brand-purple); background: #F3EEFD; }
+
+.job-card {
+  background: #fff;
+  border: 1px solid var(--brand-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.job-card .top-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.job-card .customer { font-weight: 700; font-size: 15px; color: var(--brand-black); }
+.job-card .address { font-size: 12.5px; color: var(--brand-muted); margin-top: 2px; }
+.job-card .meta-row { display: flex; gap: 14px; margin-top: 10px; font-size: 12.5px; color: var(--brand-muted); }
+.job-card .pay-amount { font-size: 20px; font-weight: 800; margin-top: 10px; }
+
+.breakdown-header {
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  margin-bottom: 16px;
+  color: #fff;
+}
+.breakdown-header.role-closer { background: var(--status-green); }
+.breakdown-header.role-setter { background: var(--status-amber); }
+.breakdown-header .role-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.85; }
+.breakdown-header .customer { font-size: 19px; font-weight: 800; margin-top: 4px; }
+
+.detail-section { background: #fff; border: 1px solid var(--brand-border); border-radius: var(--radius-lg); padding: 16px; margin-bottom: 14px; box-shadow: var(--shadow-card); }
+.detail-row { display: flex; justify-content: space-between; padding: 7px 0; font-size: 13.5px; border-bottom: 1px solid var(--brand-border); }
+.detail-row:last-child { border-bottom: none; }
+.detail-row .lbl { color: var(--brand-muted); }
+.detail-row .val { font-weight: 600; text-align: right; }
+
+.kpi-mini-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+.kpi-mini { background: #fff; border: 1px solid var(--brand-border); border-radius: var(--radius-md); padding: 12px 14px; }
+.kpi-mini .label { font-size: 11px; color: var(--brand-muted); font-weight: 600; text-transform: uppercase; }
+.kpi-mini .value { font-size: 19px; font-weight: 800; color: var(--brand-black); margin-top: 4px; }

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>My Dashboard — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/rep/rep.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<script src="/rep/rep-common.js"></script>
+<script>renderRepShell('/rep/dashboard.html');</script>
+<script src="/shared/charts.js"></script>
+<script>
+async function load() {
+  const d = await api('GET', '/api/myjobs/dashboard');
+  const k = d.kpis;
+  document.getElementById('pageContent').innerHTML = `
+    <h2 style="margin:4px 0 14px;">Hey ${d.rep.display_name || d.rep.full_name.split(' ')[0]} 👋</h2>
+    <div class="kpi-mini-grid">
+      <div class="kpi-mini"><div class="label">This Month</div><div class="value">${fmtMoney(k.thisMonthCommission)}</div></div>
+      <div class="kpi-mini"><div class="label">YTD</div><div class="value">${fmtMoney(k.ytdCommission)}</div></div>
+      <div class="kpi-mini"><div class="label">All-Time Paid</div><div class="value">${fmtMoney(k.allTimeCommission)}</div></div>
+      <div class="kpi-mini"><div class="label">Avg Net PPW</div><div class="value">${k.avgNetPPW ?? '—'}</div></div>
+    </div>
+    <div class="detail-section">
+      <p class="section-title" style="margin-top:0;">Last 6 Months</p>
+      <div style="height:200px;"><canvas id="trendChart"></canvas></div>
+    </div>
+    <div class="detail-section">
+      <p class="section-title" style="margin-top:0;">Recent Jobs</p>
+      <div id="recentJobs"></div>
+    </div>
+  `;
+  renderTrendChart('trendChart', d.monthlyTrend, { color: '#6B3FD4' });
+  document.getElementById('recentJobs').innerHTML = d.recentJobs.length === 0
+    ? '<p style="color:var(--brand-muted); font-size:13px;">Nothing approved for your view yet — check back soon.</p>'
+    : d.recentJobs.slice(0, 5).map((j) => `
+      <div class="detail-row" style="cursor:pointer;" onclick="window.location.href='/rep/job.html?id=${j.id}'">
+        <span class="lbl">${j.customer_name}</span>
+        <span class="val">${j.status_label || ''}</span>
+      </div>
+    `).join('');
+}
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Payroll Staff — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+<script src="/admin/admin-common.js"></script>
+<script>renderAdminShell('/admin/payroll-staff.html', 'Payroll Staff');</script>
+<script>
+document.getElementById('pageContent').innerHTML = `
+  <p style="color:var(--brand-muted); margin-bottom:16px; max-width:680px;">
+    Etai, Noy, Joey, and Austin aren't sales reps — their pay isn't tied to closing/setting a deal the same way.
+    Give each one their own login here so they can see only their own payroll ledger.
+  </p>
+  <div class="toolbar">
+    <button class="btn small" id="addStaffBtn" style="width:auto; margin-left:auto;">+ Add Staff Member</button>
+  </div>
+  <div class="card" id="addStaffCard" style="display:none; margin-bottom:16px; max-width:480px;">
+    <p class="section-title">New Payroll Staff Member</p>
+    <label>Full Name</label><input type="text" id="ns_full_name">
+    <label>Type</label>
+    <select id="ns_staff_type">
+      <option value="owner">Owner (per-deal M1+M2 distribution)</option>
+      <option value="pm">Project Manager (weekly salary + M2 bonus)</option>
+      <option value="ops">Operations (monthly base + kW top-up)</option>
+    </select>
+    <label>Email (optional, can add later)</label><input type="email" id="ns_email">
+    <div style="display:flex; gap:8px;">
+      <button class="btn small" id="saveStaffBtn" style="width:auto;">Save</button>
+      <button class="btn secondary small" id="cancelStaffBtn" style="width:auto;">Cancel</button>
+    </div>
+  </div>
+  <div class="card" style="overflow-x:auto;">
+    <table class="data-table">
+      <thead><tr><th>Name</th><th>Type</th><th>Formula</th><th>Login</th><th>Status</th><th></th></tr></thead>
+      <tbody id="staffBody"></tbody>
+    </table>
+  </div>
+`;
+
+const FORMULA_LABEL = {
+  owner: '$500 at M1 + $500 at M2 per funded deal',
+  pm: 'Weekly salary + M2 bonus by Net PPW tier',
+  ops: 'MAX($6,000, monthly installed kW × $55)'
+};
+
+async function loadStaff() {
+  const staff = await api('GET', '/api/payroll-staff');
+  document.getElementById('staffBody').innerHTML = staff.map((s) => `
+    <tr>
+      <td><a href="/admin/staff-dashboard.html?id=${s.id}"><strong>${s.full_name}</strong></a></td>
+      <td>${s.staff_type}</td>
+      <td style="color:var(--brand-muted); font-size:13px;">${FORMULA_LABEL[s.staff_type] || ''}</td>
+      <td>${s.login_email ? `<span class="badge green">${s.login_email}</span>` : `<button class="btn secondary small create-login-btn" data-id="${s.id}" style="width:auto;">Create Login</button>`}</td>
+      <td>${s.active ? '<span class="badge green">Active</span>' : '<span class="badge muted">Inactive</span>'}</td>
+      <td><button class="btn secondary small toggle-active-btn" data-id="${s.id}" data-active="${s.active}" style="width:auto;">${s.active ? 'Deactivate' : 'Reactivate'}</button></td>
+    </tr>
+  `).join('');
+
+  document.querySelectorAll('.create-login-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const email = prompt('Email for this person\'s login:');
+      if (!email) return;
+      try {
+        const result = await api('POST', `/api/payroll-staff/${btn.dataset.id}/create-login`, { email });
+        alert(`Login created.\n\nEmail: ${result.email}\nTemporary password: ${result.tempPassword}\n\nShare these — they'll set their own password on first login.`);
+        loadStaff();
+      } catch (e) { alert(e.message); }
+    });
+  });
+  document.querySelectorAll('.toggle-active-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await api('PUT', `/api/payroll-staff/${btn.dataset.id}`, { active: btn.dataset.active === '1' ? 0 : 1 });
+        loadStaff();
+      } catch (e) { alert(e.message); }
+    });
+  });
+}
+
+document.getElementById('addStaffBtn').addEventListener('click', () => { document.getElementById('addStaffCard').style.display = 'block'; });
+document.getElementById('cancelStaffBtn').addEventListener('click', () => { document.getElementById('addStaffCard').style.display = 'none'; });
+document.getElementById('saveStaffBtn').addEventListener('click', async () => {
+  const full_name = document.getElementById('ns_full_name').value.trim();
+  if (!full_name) { alert('Full name is required.'); return; }
+  try {
+    await api('POST', '/api/payroll-staff', {
+      full_name,
+      staff_type: document.getElementById('ns_staff_type').value,
+      email: document.getElementById('ns_email').value.trim() || null
+    });
+    document.getElementById('addStaffCard').style.display = 'none';
+    document.getElementById('ns_full_name').value = '';
+    document.getElementById('ns_email').value = '';
+    loadStaff();
+  } catch (e) { alert(e.message); }
+});
+
+loadStaff();
+</script>
+</body>
+</html>
