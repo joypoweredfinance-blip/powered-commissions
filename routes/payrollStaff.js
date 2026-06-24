@@ -57,4 +57,19 @@ router.post('/:id/create-login', async (req, res) => {
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
+router.post('/:id/reset-password', async (req, res) => {
+  try {
+    const staff = await get(`SELECT * FROM payroll_staff WHERE id = ?`, [req.params.id]);
+    if (!staff) return res.status(404).json({ error: 'Staff member not found' });
+    const user = await get(`SELECT id FROM users WHERE staff_id = ? AND role = 'payroll_staff'`, [staff.id]);
+    if (!user) return res.status(400).json({ error: 'This person does not have a login yet.' });
+    const tempPassword = genPassword();
+    const bcrypt = require('bcryptjs');
+    const hash = await bcrypt.hash(tempPassword, 10);
+    await run(`UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?`, [hash, user.id]);
+    await auditLog.logChange('payroll_staff', staff.id, 'password_reset', null, null, req.user.id, 'Password reset by admin');
+    res.json({ ok: true, email: staff.email, tempPassword });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
 module.exports = router;

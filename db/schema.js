@@ -140,8 +140,11 @@ module.exports = [
     setter_paid INTEGER NOT NULL DEFAULT 0,
     setter_paid_date TEXT,
     owner_m1_paid INTEGER NOT NULL DEFAULT 0,
+    owner_m1_paid_date TEXT,
     owner_m2_paid INTEGER NOT NULL DEFAULT 0,
+    owner_m2_paid_date TEXT,
     joey_paid INTEGER NOT NULL DEFAULT 0,
+    joey_paid_date TEXT,
     closer_breakdown_approved INTEGER NOT NULL DEFAULT 0,
     closer_approved_at TEXT,
     closer_approved_by INTEGER REFERENCES users(id),
@@ -205,5 +208,25 @@ module.exports = [
     sid TEXT PRIMARY KEY,
     sess TEXT NOT NULL,
     expires INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS dropdown_options (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL,
+    value TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1
+  )`,
+  `CREATE TABLE IF NOT EXISTS referral_bonuses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    referring_rep_id INTEGER NOT NULL REFERENCES reps(id),
+    referred_rep_id INTEGER REFERENCES reps(id),
+    referred_name TEXT,
+    join_date TEXT,
+    first_install_date TEXT,
+    first_install_deal TEXT,
+    amount REAL NOT NULL DEFAULT 1000,
+    date_paid TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`
 ];

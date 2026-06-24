@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Referrals — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+<script src="/admin/admin-common.js"></script>
+<script>renderAdminShell('/admin/referrals.html', 'Referrals');</script>
+<script>
+let REPS = [];
+
+document.getElementById('pageContent').innerHTML = `
+  <p style="color:var(--brand-muted); margin-bottom:16px; max-width:680px;">
+    New-hire referral bonuses — $1,000 whenever a rep recruits someone else onto the team.
+    Paid once the new hire's first install closes.
+  </p>
+  <div class="card" style="margin-bottom:16px; max-width:720px;">
+    <p class="section-title">New Referral</p>
+    <div class="field-row">
+      <div><label>Referring Rep</label><select id="nr_referring"></select></div>
+      <div><label>Referral (the new hire)</label><select id="nr_referred"></select></div>
+    </div>
+    <div class="field-row cols-3">
+      <div><label>Join Date</label><input type="date" id="nr_join_date"></div>
+      <div><label>First Install Date</label><input type="date" id="nr_install_date"></div>
+      <div><label>First Install Deal (customer)</label><input type="text" id="nr_install_deal"></div>
+    </div>
+    <div class="field-row">
+      <div><label>Amount ($)</label><input type="number" step="0.01" id="nr_amount" value="1000"></div>
+      <div><label>Notes</label><input type="text" id="nr_notes"></div>
+    </div>
+    <button class="btn small" id="addReferralBtn" style="width:auto;">Add Referral</button>
+  </div>
+  <div class="card" style="overflow-x:auto;">
+    <table class="data-table">
+      <thead><tr><th>Rep</th><th>Referral</th><th>Join Date</th><th>First Install</th><th>Deal</th><th>Amount</th><th>Date Paid</th><th></th></tr></thead>
+      <tbody id="referralsBody"></tbody>
+    </table>
+  </div>
+`;
+
+async function loadReps() {
+  const meta = await api('GET', '/api/meta');
+  REPS = meta.reps;
+  const opts = REPS.map((r) => `<option value="${r.id}">${r.display_name || r.full_name}</option>`).join('');
+  document.getElementById('nr_referring').innerHTML = opts;
+  document.getElementById('nr_referred').innerHTML = `<option value="">— Not in system yet —</option>` + opts;
+}
+
+async function loadReferrals() {
+  const rows = await api('GET', '/api/referrals');
+  document.getElementById('referralsBody').innerHTML = rows.length === 0
+    ? '<tr><td colspan="8" style="text-align:center; color:var(--brand-muted); padding:24px;">No referrals logged yet.</td></tr>'
+    : rows.map((r) => `
+      <tr data-id="${r.id}">
+        <td>${r.referring_rep_name || '—'}</td>
+        <td>${r.referred_rep_name || r.referred_name || '—'}</td>
+        <td>${fmtDate(r.join_date)}</td>
+        <td>${fmtDate(r.first_install_date)}</td>
+        <td>${r.first_install_deal || '—'}</td>
+        <td>${fmtMoney(r.amount)}</td>
+        <td><input type="date" class="paid-date" value="${(r.date_paid || '').slice(0, 10)}" style="margin:0; padding:6px 8px;"></td>
+        <td><button class="icon-btn delete-btn">✕</button></td>
+      </tr>
+    `).join('');
+
+  document.querySelectorAll('#referralsBody tr').forEach((row) => {
+    const id = row.dataset.id;
+    const dateInput = row.querySelector('.paid-date');
+    if (dateInput) {
+      dateInput.addEventListener('change', async () => {
+        try { await api('PUT', `/api/referrals/${id}`, { date_paid: dateInput.value || null }); } catch (e) { alert(e.message); }
+      });
+    }
+    const delBtn = row.querySelector('.delete-btn');
+    if (delBtn) {
+      delBtn.addEventListener('click', async () => {
+        if (!confirm('Delete this referral record?')) return;
+        try { await api('DELETE', `/api/referrals/${id}`); loadReferrals(); } catch (e) { alert(e.message); }
+      });
+    }
+  });
+}
+
+document.getElementById('addReferralBtn').addEventListener('click', async () => {
+  const referredId = document.getElementById('nr_referred').value;
+  try {
+    await api('POST', '/api/referrals', {
+      referring_rep_id: Number(document.getElementById('nr_referring').value),
+      referred_rep_id: referredId ? Number(referredId) : null,
+      referred_name: referredId ? REPS.find((r) => String(r.id) === referredId).full_name : null,
+      join_date: document.getElementById('nr_join_date').value || null,
+      first_install_date: document.getElementById('nr_install_date').value || null,
+      first_install_deal: document.getElementById('nr_install_deal').value.trim() || null,
+      amount: parseFloat(document.getElementById('nr_amount').value) || 1000,
+      notes: document.getElementById('nr_notes').value.trim() || null
+    });
+    ['nr_join_date', 'nr_install_date', 'nr_install_deal', 'nr_notes'].forEach((id) => { document.getElementById(id).value = ''; });
+    document.getElementById('nr_amount').value = 1000;
+    loadReferrals();
+  } catch (e) { alert(e.message); }
+});
+
+loadReps().then(loadReferrals);
+</script>
+</body>
+</html>

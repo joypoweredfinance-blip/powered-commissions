@@ -9,9 +9,11 @@ const NAV_ITEMS = [
   { section: 'Money' },
   { href: '/admin/advances.html', label: '💸 Advances' },
   { href: '/admin/clawbacks.html', label: '↩️ Clawbacks' },
+  { href: '/admin/referrals.html', label: '🤝 Referrals' },
   { section: 'Configuration' },
   { href: '/admin/settings.html', label: '⚙️ Commission Rules' },
   { href: '/admin/installers.html', label: '🏗️ Installers & Financiers' },
+  { href: '/admin/admins.html', label: '🔐 Admins', superAdminOnly: true },
   { href: '/admin/audit.html', label: '🕓 Audit Log' }
 ];
 
@@ -27,14 +29,15 @@ function renderAdminShell(activeHref, pageTitle) {
   const navHtml = NAV_ITEMS.map((item) => {
     if (item.section) return `<div class="section-label">${item.section}</div>`;
     const active = item.href === activeHref ? 'active' : '';
-    return `<a href="${item.href}" class="${active}">${item.label}</a>`;
+    const hidden = item.superAdminOnly ? 'style="display:none;" data-super-admin-only="1"' : '';
+    return `<a href="${item.href}" class="${active}" ${hidden}>${item.label}</a>`;
   }).join('');
 
   document.body.insertAdjacentHTML('afterbegin', `
     <div class="app-shell">
       <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
       <aside class="sidebar" id="sidebar">
-        <div class="brand-logo">POWERED <span class="bolt">⚡</span></div>
+        <div class="brand-logo"><img src="/shared/logo-white.svg" alt="POWERED"></div>
         <nav>${navHtml}</nav>
       </aside>
       <div class="main-area">
@@ -71,6 +74,9 @@ function renderAdminShell(activeHref, pageTitle) {
 
   fetch('/api/auth/me').then((r) => r.json()).then((me) => {
     document.getElementById('userEmail').textContent = me.email || '';
+    if (me.role === 'super_admin') {
+      document.querySelectorAll('[data-super-admin-only]').forEach((el) => { el.style.display = ''; });
+    }
   }).catch(() => {});
 }
 

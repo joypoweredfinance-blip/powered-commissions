@@ -58,7 +58,7 @@ async function loadReps() {
       <td><a href="/admin/rep-dashboard.html?id=${r.id}"><strong>${r.full_name}</strong></a>${r.display_name ? `<br><span style="color:var(--brand-muted); font-size:12px;">${r.display_name}</span>` : ''}</td>
       <td>${r.rep_type}</td>
       <td>${scaleSelect(r.id, r.pay_scale_id)}</td>
-      <td>${r.login_email ? `<span class="badge green">${r.login_email}</span>` : `<button class="btn secondary small create-login-btn" data-id="${r.id}" style="width:auto;">Create Login</button>`}</td>
+      <td>${r.login_email ? `<span class="badge green">${r.login_email}</span> <button class="btn secondary small reset-pw-btn" data-id="${r.id}" style="width:auto;">Reset Password</button>` : `<button class="btn secondary small create-login-btn" data-id="${r.id}" style="width:auto;">Create Login</button>`}</td>
       <td>${r.active ? '<span class="badge green">Active</span>' : '<span class="badge muted">Inactive</span>'}</td>
       <td><button class="btn secondary small toggle-active-btn" data-id="${r.id}" data-active="${r.active}" style="width:auto;">${r.active ? 'Deactivate' : 'Reactivate'}</button></td>
     </tr>
@@ -77,6 +77,15 @@ async function loadReps() {
         const result = await api('POST', `/api/reps/${btn.dataset.id}/create-login`, { email });
         alert(`Login created.\n\nEmail: ${result.email}\nTemporary password: ${result.tempPassword}\n\nShare these with the rep — they'll be asked to set their own password on first login.`);
         loadReps();
+      } catch (e) { alert(e.message); }
+    });
+  });
+  document.querySelectorAll('.reset-pw-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Reset this rep\'s password? They\'ll need the new temporary password to log in.')) return;
+      try {
+        const result = await api('POST', `/api/reps/${btn.dataset.id}/reset-password`);
+        alert(`New temporary password for ${result.email}:\n\n${result.tempPassword}\n\nShare this with them — they'll set their own password on next login.`);
       } catch (e) { alert(e.message); }
     });
   });

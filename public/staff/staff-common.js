@@ -21,7 +21,7 @@ function renderStaffShell(activeHref) {
   document.body.insertAdjacentHTML('afterbegin', `
     <div class="rep-shell">
       <header class="rep-header">
-        <div class="brand-logo">POWERED <span class="bolt">⚡</span></div>
+        <div class="brand-logo"><img src="/shared/logo.svg" alt="POWERED"></div>
         <button class="icon-btn" id="logoutBtn" title="Log out">⎋</button>
       </header>
       <main class="rep-content" id="pageContent"></main>

@@ -10,6 +10,23 @@ function floatval(id) { const v = val(id); return v === '' || v === null ? null 
 function checked(id) { const el = document.getElementById(id); return el ? el.checked : false; }
 function dateOrNull(v) { return v || null; }
 
+// Disables a button for the duration of an async action so a fast double-click (or a slow
+// network response) can never fire the same create/save/delete request twice.
+async function guardedClick(button, busyLabel, fn) {
+  if (button.disabled) return;
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = busyLabel;
+  try {
+    await fn();
+  } finally {
+    if (document.body.contains(button)) {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }
+}
+
 function repOptions(type, selected) {
   const filtered = META.reps.filter((r) => r.rep_type === type || r.rep_type === 'both');
   let html = `<option value="">${type === 'setter' ? '— None —' : '— Select —'}</option>`;
@@ -18,6 +35,20 @@ function repOptions(type, selected) {
   });
   return html;
 }
+function populateDropdownSelect(elId, category, currentValue) {
+  const options = (META.dropdownOptions && META.dropdownOptions[category]) || [];
+  const el = document.getElementById(elId);
+  let html = `<option value="">— Select —</option>`;
+  let hasCurrent = !currentValue;
+  for (const opt of options) {
+    if (opt.value === currentValue) hasCurrent = true;
+    html += `<option value="${opt.value}" ${opt.value === currentValue ? 'selected' : ''}>${opt.value}</option>`;
+  }
+  // If the deal already has a value that isn't in the list (e.g. legacy free-text data), keep it visible and selected.
+  if (!hasCurrent) html += `<option value="${currentValue}" selected>${currentValue}</option>`;
+  el.innerHTML = html;
+}
+
 function selectOptions(list, selected, placeholder, labelKey = 'label') {
   let html = `<option value="">${placeholder}</option>`;
   list.forEach((item) => {
@@ -54,7 +85,7 @@ function renderCreateForm() {
       <button class="btn" id="createBtn">Create Deal</button>
     </div>
   `;
-  document.getElementById('createBtn').addEventListener('click', async () => {
+  document.getElementById('createBtn').addEventListener('click', (e) => guardedClick(e.target, 'Creating…', async () => {
     const data = {
       customer_name: val('f_customer_name'),
       customer_address: val('f_customer_address'),
@@ -70,7 +101,7 @@ function renderCreateForm() {
       const deal = await api('POST', '/api/deals', data);
       window.location.href = `/admin/deal.html?id=${deal.id}`;
     } catch (e) { alert(e.message); }
-  });
+  }));
 }
 
 function renderFull() {
@@ -104,10 +135,20 @@ function renderFull() {
           <div class="field-row cols-3">
             <div><label>Installer</label><select id="f_installer_id"></select></div>
             <div><label>Financier</label><select id="f_financier_id"></select></div>
-            <div><label>Module Type</label><input type="text" id="f_module_type"></div>
+            <div><label>Module Type</label>
+              <div style="display:flex; gap:6px;">
+                <select id="f_module_type" style="flex:1;"></select>
+                <button type="button" class="icon-btn add-option-btn" data-category="module_type" data-target="f_module_type" title="Add a new option" style="border:1px solid var(--brand-border); border-radius:8px;">+</button>
+              </div>
+            </div>
           </div>
           <div class="field-row cols-3">
-            <div><label>Battery Type</label><input type="text" id="f_battery_type"></div>
+            <div><label>Battery Type</label>
+              <div style="display:flex; gap:6px;">
+                <select id="f_battery_type" style="flex:1;"></select>
+                <button type="button" class="icon-btn add-option-btn" data-category="battery_type" data-target="f_battery_type" title="Add a new option" style="border:1px solid var(--brand-border); border-radius:8px;">+</button>
+              </div>
+            </div>
             <div><label># Batteries</label><input type="number" id="f_num_batteries"></div>
             <div><label>System Size (kW)</label><input type="number" step="0.01" id="f_system_size_kw"></div>
           </div>
@@ -163,6 +204,10 @@ function renderFull() {
       <div>
         <div class="card" style="margin-bottom:20px;">
           <p class="section-title">Commission Calculator</p>
+          <p style="font-size:12px; color:var(--brand-muted); margin:-8px 0 12px;">
+            These numbers only update when you click Recalculate (or add/edit a line item below) —
+            saving the form on the left never silently changes them.
+          </p>
           <div id="calcLines"></div>
           <div style="display:flex; gap:8px; margin-top:14px;">
             <button class="btn secondary small" id="recalcBtn">Recalculate</button>
@@ -189,6 +234,7 @@ function renderFull() {
     </div>
 
     <div style="position:sticky; bottom:0; background:#fff; border-top:1px solid var(--brand-border); padding:14px 0; margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
+      <button class="btn danger small" id="deleteBtn" style="width:auto; margin-right:auto;">Delete Deal</button>
       <button class="btn secondary small" id="backBtn">Back to Board</button>
       <button class="btn small" id="saveBtn" style="width:auto;">Save Changes</button>
     </div>
@@ -217,8 +263,8 @@ function populateFields() {
 
   document.getElementById('f_installer_id').innerHTML = selectOptions(META.installers, d.installer_id, '— Select —');
   document.getElementById('f_financier_id').innerHTML = selectOptions(META.financiers, d.financier_id, '— Select —');
-  document.getElementById('f_module_type').value = d.module_type || '';
-  document.getElementById('f_battery_type').value = d.battery_type || '';
+  populateDropdownSelect('f_module_type', 'module_type', d.module_type);
+  populateDropdownSelect('f_battery_type', 'battery_type', d.battery_type);
   document.getElementById('f_num_batteries').value = d.num_batteries ?? '';
   document.getElementById('f_system_size_kw').value = d.system_size_kw ?? '';
   document.getElementById('f_panel_count').value = d.panel_count ?? '';
@@ -347,32 +393,46 @@ async function setApproval(role, approved) {
   } catch (e) { alert(e.message); }
 }
 
-function paymentRow(label, recipient, paid, amount, dateField) {
+function paymentRow(label, recipient, paid, amount, paidDate) {
   return `
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--brand-border);">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--brand-border); flex-wrap:wrap; gap:6px;">
       <div><strong>${label}</strong> ${amount !== undefined ? `— ${fmtMoney(amount)}` : ''}</div>
-      <label style="display:flex; align-items:center; gap:6px; font-size:13px;">
-        <input type="checkbox" class="pay-toggle" data-recipient="${recipient}" ${paid ? 'checked' : ''} style="width:auto;"> Paid
-      </label>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <input type="date" class="pay-date" data-recipient="${recipient}" value="${(paidDate || '').slice(0, 10)}" style="margin:0; padding:6px 8px; ${paid ? '' : 'display:none;'}">
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px;">
+          <input type="checkbox" class="pay-toggle" data-recipient="${recipient}" ${paid ? 'checked' : ''} style="width:auto;"> Paid
+        </label>
+      </div>
     </div>`;
 }
 
 function renderPayment() {
   const d = DEAL;
   let html = '';
-  if (d.closer_rep_id) html += paymentRow('Closer', 'closer', d.closer_paid, d.closer_pay_net);
-  if (d.setter_rep_id) html += paymentRow('Setter', 'setter', d.setter_paid, d.setter_pay);
+  if (d.closer_rep_id) html += paymentRow('Closer', 'closer', d.closer_paid, d.closer_pay_net, d.closer_paid_date);
+  if (d.setter_rep_id) html += paymentRow('Setter', 'setter', d.setter_paid, d.setter_pay, d.setter_paid_date);
   html += `<p class="section-title" style="margin-top:16px;">Internal Payroll (admin only)</p>`;
-  html += paymentRow('Owner M1 (Etai + Noy)', 'owner_m1', d.owner_m1_paid, d.owner_etai_total + d.owner_noy_total);
-  html += paymentRow('Owner M2 (Etai + Noy)', 'owner_m2', d.owner_m2_paid, undefined);
-  html += paymentRow("Joey's M2 Bonus", 'joey', d.joey_paid, d.joey_m2_bonus);
+  html += paymentRow('Owner M1 (Etai + Noy)', 'owner_m1', d.owner_m1_paid, d.owner_etai_total + d.owner_noy_total, d.owner_m1_paid_date);
+  html += paymentRow('Owner M2 (Etai + Noy)', 'owner_m2', d.owner_m2_paid, undefined, d.owner_m2_paid_date);
+  html += paymentRow("Joey's M2 Bonus", 'joey', d.joey_paid, d.joey_m2_bonus, d.joey_paid_date);
   document.getElementById('paymentBox').innerHTML = html;
+
+  async function sendPayment(recipient, paid, date) {
+    try {
+      DEAL = await api('POST', `/api/deals/${dealId}/payment`, { recipient, paid, date });
+      renderPayment();
+    } catch (e) { alert(e.message); }
+  }
+
   document.querySelectorAll('.pay-toggle').forEach((box) => {
-    box.addEventListener('change', async () => {
-      try {
-        DEAL = await api('POST', `/api/deals/${dealId}/payment`, { recipient: box.dataset.recipient, paid: box.checked });
-        renderPayment();
-      } catch (e) { alert(e.message); }
+    box.addEventListener('change', () => {
+      const dateInput = document.querySelector(`.pay-date[data-recipient="${box.dataset.recipient}"]`);
+      sendPayment(box.dataset.recipient, box.checked, dateInput ? dateInput.value : null);
+    });
+  });
+  document.querySelectorAll('.pay-date').forEach((input) => {
+    input.addEventListener('change', () => {
+      sendPayment(input.dataset.recipient, true, input.value);
     });
   });
 }
@@ -396,20 +456,40 @@ function wireEvents() {
     document.getElementById('f_pay_split').value = e.target.checked ? 0.75 : 0.50;
   });
 
-  document.getElementById('addAdderBtn').addEventListener('click', async () => {
+  document.querySelectorAll('.add-option-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const value = prompt('New option to add to this list:');
+      if (!value || !value.trim()) return;
+      try {
+        await api('POST', '/api/dropdown-options', { category: btn.dataset.category, value: value.trim() });
+        META = await api('GET', '/api/meta');
+        populateDropdownSelect(btn.dataset.target, btn.dataset.category, value.trim());
+      } catch (e) { alert(e.message); }
+    });
+  });
+
+  document.getElementById('addAdderBtn').addEventListener('click', (e) => guardedClick(e.target, 'Adding…', async () => {
     try {
       DEAL = await api('POST', `/api/deals/${dealId}/adders`, { label: 'New item', category: 'misc', amount: 0, counts_as_hard_cost: true });
       renderAdders();
       renderCalc();
-    } catch (e) { alert(e.message); }
-  });
+    } catch (e2) { alert(e2.message); }
+  }));
 
-  document.getElementById('recalcBtn').addEventListener('click', async () => {
+  document.getElementById('recalcBtn').addEventListener('click', (e) => guardedClick(e.target, 'Recalculating…', async () => {
     try {
       DEAL = await api('POST', `/api/deals/${dealId}/recalculate`, { force: true });
       renderCalc();
-    } catch (e) { alert(e.message); }
-  });
+    } catch (e2) { alert(e2.message); }
+  }));
+
+  document.getElementById('deleteBtn').addEventListener('click', (e) => guardedClick(e.target, 'Deleting…', async () => {
+    if (!confirm(`Delete "${DEAL.customer_name}" permanently? This cannot be undone.`)) return;
+    try {
+      await api('DELETE', `/api/deals/${dealId}`);
+      window.location.href = '/admin/board.html';
+    } catch (e2) { alert(e2.message); }
+  }));
 
   document.getElementById('overrideBtn').addEventListener('click', () => {
     overrideMode = !overrideMode;
@@ -463,7 +543,11 @@ function wireEvents() {
 
   document.getElementById('backBtn').addEventListener('click', () => { window.location.href = '/admin/board.html'; });
 
-  document.getElementById('saveBtn').addEventListener('click', async () => {
+  document.getElementById('saveBtn').addEventListener('click', async (e) => {
+    const btn = e.target;
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
     const data = {
       customer_name: val('f_customer_name'),
       customer_address: val('f_customer_address'),
@@ -506,9 +590,12 @@ function wireEvents() {
       renderApproval();
       renderPayment();
       renderAudit();
-      document.getElementById('saveBtn').textContent = 'Saved ✓';
-      setTimeout(() => { document.getElementById('saveBtn').textContent = 'Save Changes'; }, 1500);
-    } catch (e) { alert(e.message); }
+      btn.textContent = 'Saved ✓';
+      setTimeout(() => { if (document.body.contains(btn)) { btn.textContent = 'Save Changes'; btn.disabled = false; } }, 1200);
+      return;
+    } catch (e2) { alert(e2.message); }
+    btn.disabled = false;
+    btn.textContent = 'Save Changes';
   });
 }
 

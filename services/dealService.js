@@ -107,7 +107,10 @@ async function updateDeal(id, data, userId, reason = null) {
   const values = fields.map((f) => data[f]);
   await run(`UPDATE deals SET ${setClause}, updated_at = datetime('now') WHERE id = ?`, [...values, id]);
   await auditLog.logDiff('deals', id, oldRow, data, userId, reason);
-  await recalculate(id, userId);
+  // Deliberately does NOT auto-recalculate here. A general field save (customer info, dates,
+  // notes, etc.) should only persist what was actually edited — recalculation is a separate,
+  // explicit action (the Recalculate button, adding/editing an adder, or creating the deal)
+  // so it never looks like a save produced a second, surprise change to the commission numbers.
   return getDeal(id);
 }
 
@@ -215,9 +218,9 @@ async function setPaymentFlag(dealId, recipient, paid, date, userId) {
   const map = {
     closer: ['closer_paid', 'closer_paid_date'],
     setter: ['setter_paid', 'setter_paid_date'],
-    owner_m1: ['owner_m1_paid', null],
-    owner_m2: ['owner_m2_paid', null],
-    joey: ['joey_paid', null]
+    owner_m1: ['owner_m1_paid', 'owner_m1_paid_date'],
+    owner_m2: ['owner_m2_paid', 'owner_m2_paid_date'],
+    joey: ['joey_paid', 'joey_paid_date']
   };
   const [flagField, dateField] = map[recipient];
   if (dateField) {

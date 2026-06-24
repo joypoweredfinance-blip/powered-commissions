@@ -33,22 +33,26 @@ app.use(passport.session());
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/api/auth', require('./routes/auth'));
-app.use('/api/deals', requireRole('admin'), require('./routes/deals'));
-app.use('/api/meta', requireRole('admin'), require('./routes/meta'));
-app.use('/api/reps', requireRole('admin'), require('./routes/reps'));
-app.use('/api/payroll-staff', requireRole('admin'), require('./routes/payrollStaff'));
-app.use('/api/reference', requireRole('admin'), require('./routes/installers'));
-app.use('/api/settings', requireRole('admin'), require('./routes/settings'));
-app.use('/api/advances', requireRole('admin'), require('./routes/advances'));
-app.use('/api/clawbacks', requireRole('admin'), require('./routes/clawbacks'));
-app.use('/api/audit', requireRole('admin'), require('./routes/audit'));
-app.use('/api/dashboard', requireRole('admin'), require('./routes/dashboard'));
+app.use('/api/deals', requireRole('admin', 'super_admin'), require('./routes/deals'));
+app.use('/api/meta', requireRole('admin', 'super_admin'), require('./routes/meta'));
+app.use('/api/reps', requireRole('admin', 'super_admin'), require('./routes/reps'));
+app.use('/api/payroll-staff', requireRole('admin', 'super_admin'), require('./routes/payrollStaff'));
+app.use('/api/reference', requireRole('admin', 'super_admin'), require('./routes/installers'));
+app.use('/api/dropdown-options', requireRole('admin', 'super_admin'), require('./routes/dropdownOptions'));
+app.use('/api/settings', requireRole('admin', 'super_admin'), require('./routes/settings'));
+app.use('/api/advances', requireRole('admin', 'super_admin'), require('./routes/advances'));
+app.use('/api/clawbacks', requireRole('admin', 'super_admin'), require('./routes/clawbacks'));
+app.use('/api/referrals', requireRole('admin', 'super_admin'), require('./routes/referrals'));
+app.use('/api/audit', requireRole('admin', 'super_admin'), require('./routes/audit'));
+app.use('/api/dashboard', requireRole('admin', 'super_admin'), require('./routes/dashboard'));
+app.use('/api/admins', requireRole('super_admin'), require('./routes/admins'));
 app.use('/api/myjobs', requireRole('sales_rep'), require('./routes/myjobs'));
 app.use('/api/mypayroll', requireRole('payroll_staff'), require('./routes/mypayroll'));
 
-for (const page of ['board', 'deal', 'dashboard', 'reps', 'rep-dashboard', 'payroll-staff', 'staff-dashboard', 'installers', 'settings', 'advances', 'clawbacks', 'audit']) {
-  app.get(`/admin/${page}.html`, guardPage(`admin/${page}.html`, 'admin'));
+for (const page of ['board', 'deal', 'dashboard', 'reps', 'rep-dashboard', 'payroll-staff', 'staff-dashboard', 'installers', 'settings', 'advances', 'clawbacks', 'audit', 'referrals']) {
+  app.get(`/admin/${page}.html`, guardPage(`admin/${page}.html`, 'admin', 'super_admin'));
 }
+app.get('/admin/admins.html', guardPage('admin/admins.html', 'super_admin'));
 for (const page of ['dashboard', 'jobs', 'job', 'commissions', 'profile']) {
   app.get(`/rep/${page}.html`, guardPage(`rep/${page}.html`, 'sales_rep'));
 }

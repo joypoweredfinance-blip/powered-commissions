@@ -32,13 +32,10 @@ a { color: var(--brand-purple); text-decoration: none; }
 .brand-logo {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-weight: 800;
-  letter-spacing: 0.5px;
-  font-size: 20px;
-  color: var(--brand-black);
 }
-.brand-logo .bolt { color: var(--brand-purple); }
+.brand-logo img { height: 22px; width: auto; display: block; }
+.sidebar .brand-logo img { height: 20px; }
+.auth-card .brand-logo img { height: 28px; }
 
 .auth-shell {
   min-height: 100vh;

@@ -32,7 +32,7 @@ async function createLogin({ email, role, rep_id = null, staff_id = null, tempPa
 }
 
 function homePathFor(user) {
-  if (user.role === 'admin') return '/admin/dashboard.html';
+  if (user.role === 'admin' || user.role === 'super_admin') return '/admin/dashboard.html';
   if (user.role === 'sales_rep') return '/rep/dashboard.html';
   if (user.role === 'payroll_staff') return '/staff/dashboard.html';
   return '/login.html';

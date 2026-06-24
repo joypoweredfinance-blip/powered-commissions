@@ -55,7 +55,7 @@ async function loadStaff() {
       <td><a href="/admin/staff-dashboard.html?id=${s.id}"><strong>${s.full_name}</strong></a></td>
       <td>${s.staff_type}</td>
       <td style="color:var(--brand-muted); font-size:13px;">${FORMULA_LABEL[s.staff_type] || ''}</td>
-      <td>${s.login_email ? `<span class="badge green">${s.login_email}</span>` : `<button class="btn secondary small create-login-btn" data-id="${s.id}" style="width:auto;">Create Login</button>`}</td>
+      <td>${s.login_email ? `<span class="badge green">${s.login_email}</span> <button class="btn secondary small reset-pw-btn" data-id="${s.id}" style="width:auto;">Reset Password</button>` : `<button class="btn secondary small create-login-btn" data-id="${s.id}" style="width:auto;">Create Login</button>`}</td>
       <td>${s.active ? '<span class="badge green">Active</span>' : '<span class="badge muted">Inactive</span>'}</td>
       <td><button class="btn secondary small toggle-active-btn" data-id="${s.id}" data-active="${s.active}" style="width:auto;">${s.active ? 'Deactivate' : 'Reactivate'}</button></td>
     </tr>
@@ -69,6 +69,15 @@ async function loadStaff() {
         const result = await api('POST', `/api/payroll-staff/${btn.dataset.id}/create-login`, { email });
         alert(`Login created.\n\nEmail: ${result.email}\nTemporary password: ${result.tempPassword}\n\nShare these — they'll set their own password on first login.`);
         loadStaff();
+      } catch (e) { alert(e.message); }
+    });
+  });
+  document.querySelectorAll('.reset-pw-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Reset this person\'s password? They\'ll need the new temporary password to log in.')) return;
+      try {
+        const result = await api('POST', `/api/payroll-staff/${btn.dataset.id}/reset-password`);
+        alert(`New temporary password for ${result.email}:\n\n${result.tempPassword}\n\nShare this with them — they'll set their own password on next login.`);
       } catch (e) { alert(e.message); }
     });
   });

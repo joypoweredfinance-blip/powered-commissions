@@ -75,6 +75,21 @@ const FINANCIERS = [
   ['Propel', null, 'Seen on real June deals — confirm with Etai whether actively used.']
 ];
 
+const BATTERY_TYPES = [
+  'Enphase IQBATTERY-5P-1P-NA-DOM',
+  'Enphase IQBATTERY-10C-1P-NA-DOM',
+  'Enphase IQBATTERY-3T',
+  'Tesla Powerwall',
+  'None'
+];
+
+const MODULE_TYPES = [
+  'JA Solar JAM54D41-440/MB',
+  'REC Alpha Pure',
+  'Qcells Q.PEAK',
+  'Silfab'
+];
+
 async function seedIfEmpty() {
   // --- pay scales + tiers ---
   let standard = await get(`SELECT id FROM pay_scales WHERE name = ?`, ['Standard']);
@@ -142,6 +157,19 @@ async function seedIfEmpty() {
     }
   }
 
+  // --- dropdown options (battery/module type) ---
+  const dropdownCount = await get(`SELECT COUNT(*) as c FROM dropdown_options`);
+  if (dropdownCount.c === 0) {
+    let i = 0;
+    for (const value of BATTERY_TYPES) {
+      await run(`INSERT INTO dropdown_options (category, value, sort_order) VALUES ('battery_type', ?, ?)`, [value, i++]);
+    }
+    i = 0;
+    for (const value of MODULE_TYPES) {
+      await run(`INSERT INTO dropdown_options (category, value, sort_order) VALUES ('module_type', ?, ?)`, [value, i++]);
+    }
+  }
+
   // --- commission settings (singleton) ---
   const settings = await get(`SELECT id FROM commission_settings WHERE id = 1`);
   if (!settings) {
@@ -155,7 +183,7 @@ async function seedIfEmpty() {
     const tempPassword = genPassword();
     const hash = await bcrypt.hash(tempPassword, 10);
     await run(
-      `INSERT INTO users (email, password_hash, role, must_change_password) VALUES (?, ?, 'admin', 1)`,
+      `INSERT INTO users (email, password_hash, role, must_change_password) VALUES (?, ?, 'super_admin', 1)`,
       [adminEmail, hash]
     );
     console.log('\n========================================================');

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Admins — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+<script src="/admin/admin-common.js"></script>
+<script>renderAdminShell('/admin/admins.html', 'Admins');</script>
+<script>
+document.getElementById('pageContent').innerHTML = `
+  <p style="color:var(--brand-muted); margin-bottom:16px; max-width:680px;">
+    There is exactly one Super Admin (you). Admins you create here get the same access to deals,
+    reps, and settings as you do, but can never create another admin account or touch this one.
+  </p>
+  <div class="toolbar">
+    <button class="btn small" id="addAdminBtn" style="width:auto; margin-left:auto;">+ Add Admin</button>
+  </div>
+  <div class="card" id="addAdminCard" style="display:none; margin-bottom:16px; max-width:480px;">
+    <p class="section-title">New Admin</p>
+    <label>Email</label><input type="email" id="na_email" placeholder="etai@poweredsolar.com">
+    <div style="display:flex; gap:8px;">
+      <button class="btn small" id="saveAdminBtn" style="width:auto;">Create Admin</button>
+      <button class="btn secondary small" id="cancelAdminBtn" style="width:auto;">Cancel</button>
+    </div>
+  </div>
+  <div class="card" style="overflow-x:auto;">
+    <table class="data-table">
+      <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th></th></tr></thead>
+      <tbody id="adminsBody"></tbody>
+    </table>
+  </div>
+`;
+
+async function load() {
+  const rows = await api('GET', '/api/admins');
+  document.getElementById('adminsBody').innerHTML = rows.map((u) => `
+    <tr data-id="${u.id}">
+      <td>${u.email}</td>
+      <td>${u.role === 'super_admin' ? '<span class="badge green">Super Admin</span>' : '<span class="badge muted">Admin</span>'}</td>
+      <td>${u.active ? '<span class="badge green">Active</span>' : '<span class="badge muted">Inactive</span>'}</td>
+      <td>${u.last_login_at ? fmtDate(u.last_login_at) : 'Never'}</td>
+      <td>
+        ${u.role === 'super_admin' ? '' : `
+          <button class="btn secondary small reset-btn" data-id="${u.id}" style="width:auto;">Reset Password</button>
+          <button class="btn secondary small toggle-btn" data-id="${u.id}" data-active="${u.active}" style="width:auto;">${u.active ? 'Deactivate' : 'Reactivate'}</button>
+        `}
+      </td>
+    </tr>
+  `).join('');
+
+  document.querySelectorAll('.reset-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Reset this admin\'s password? They will need the new temporary password to log in.')) return;
+      try {
+        const result = await api('POST', `/api/admins/${btn.dataset.id}/reset-password`);
+        alert(`New temporary password for ${result.email}:\n\n${result.tempPassword}\n\nShare this with them — they'll set their own password on next login.`);
+      } catch (e) { alert(e.message); }
+    });
+  });
+  document.querySelectorAll('.toggle-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await api('PUT', `/api/admins/${btn.dataset.id}`, { active: btn.dataset.active === '1' ? 0 : 1 });
+        load();
+      } catch (e) { alert(e.message); }
+    });
+  });
+}
+
+document.getElementById('addAdminBtn').addEventListener('click', () => { document.getElementById('addAdminCard').style.display = 'block'; });
+document.getElementById('cancelAdminBtn').addEventListener('click', () => { document.getElementById('addAdminCard').style.display = 'none'; });
+document.getElementById('saveAdminBtn').addEventListener('click', async () => {
+  const email = document.getElementById('na_email').value.trim();
+  if (!email) { alert('Email is required.'); return; }
+  try {
+    const result = await api('POST', '/api/admins', { email });
+    alert(`Admin created.\n\nEmail: ${result.email}\nTemporary password: ${result.tempPassword}\n\nShare these — they'll set their own password on first login.`);
+    document.getElementById('addAdminCard').style.display = 'none';
+    document.getElementById('na_email').value = '';
+    load();
+  } catch (e) { alert(e.message); }
+});
+
+load();
+</script>
+</body>
+</html>

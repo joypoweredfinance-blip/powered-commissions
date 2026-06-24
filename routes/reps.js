@@ -59,4 +59,19 @@ router.post('/:id/create-login', async (req, res) => {
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
+router.post('/:id/reset-password', async (req, res) => {
+  try {
+    const rep = await get(`SELECT * FROM reps WHERE id = ?`, [req.params.id]);
+    if (!rep) return res.status(404).json({ error: 'Rep not found' });
+    const user = await get(`SELECT id FROM users WHERE rep_id = ? AND role = 'sales_rep'`, [rep.id]);
+    if (!user) return res.status(400).json({ error: 'This rep does not have a login yet.' });
+    const tempPassword = genPassword();
+    const bcrypt = require('bcryptjs');
+    const hash = await bcrypt.hash(tempPassword, 10);
+    await run(`UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?`, [hash, user.id]);
+    await auditLog.logChange('reps', rep.id, 'password_reset', null, null, req.user.id, 'Password reset by admin');
+    res.json({ ok: true, email: rep.email, tempPassword });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
 module.exports = router;
