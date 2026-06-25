@@ -47,6 +47,10 @@
 .topbar .user-chip { font-size: 13px; color: var(--brand-muted); display: flex; align-items: center; gap: 10px; }
 
 .page-content { padding: 24px 28px; max-width: 1400px; }
+/* Wide-table pages (e.g. the Deals Board) opt out of the cap so the table gets the full
+   width of the viewer's own screen instead of fighting an inner scrollbar inside a
+   narrower box — most other pages keep the cap since it reads better on ultra-wide screens. */
+.page-content.full-bleed { max-width: none; }
 
 .card {
   background: var(--brand-card);

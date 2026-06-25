@@ -11,6 +11,7 @@
 <script src="/admin/admin-common.js"></script>
 <script>renderAdminShell('/admin/board.html', 'Deals Board');</script>
 <script>
+document.getElementById('pageContent').classList.add('full-bleed');
 document.getElementById('pageContent').innerHTML = `
   <div class="toolbar">
     <input type="text" id="searchInput" placeholder="Search customer or address…">
