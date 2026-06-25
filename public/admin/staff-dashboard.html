@@ -32,9 +32,12 @@ async function load() {
       kpiCard('Deals Counted', d.kpis.dealCount)
     ].join('');
     ledgerHtml = d.ledger.map((l) => `
-      <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--brand-border);">
-        <span>${l.customer_name} <span style="color:var(--brand-muted); font-size:12px;">(M1 ${l.m1_approved_date ? '✓' : '—'} / M2 ${l.m2_approved_date ? '✓' : '—'})</span></span>
-        <strong>${fmtMoney(l.amount)}</strong>
+      <div style="padding:8px 0; border-bottom:1px solid var(--brand-border);">
+        <div style="font-weight:600;">${l.customer_name}</div>
+        <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--brand-muted);">
+          <span>M1: ${fmtMoney(l.m1Amount)} ${l.m1Paid ? '✓ ' + fmtDate(l.m1PaidDate) : '(unpaid)'}</span>
+          <span>M2: ${fmtMoney(l.m2Amount)} ${l.m2Paid ? '✓ ' + fmtDate(l.m2PaidDate) : '(unpaid)'}</span>
+        </div>
       </div>`).join('');
   } else if (d.type === 'pm') {
     kpiHtml = [

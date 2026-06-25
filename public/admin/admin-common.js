@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { href: '/admin/reps.html', label: '🧑‍💼 Sales Reps' },
   { href: '/admin/payroll-staff.html', label: '🧾 Payroll Staff' },
   { section: 'Money' },
+  { href: '/admin/pay-runs.html', label: '🧮 Commission Summary' },
   { href: '/admin/advances.html', label: '💸 Advances' },
   { href: '/admin/clawbacks.html', label: '↩️ Clawbacks' },
   { href: '/admin/referrals.html', label: '🤝 Referrals' },

@@ -17,7 +17,9 @@ const EDITABLE_FIELDS = [
 
 const COMPUTED_FIELDS = [
   'net_ppw', 'pay_scale_rate', 'rep_pool', 'closer_pay_gross', 'closer_pay_net', 'setter_pay',
-  'owner_etai_total', 'owner_noy_total', 'joey_m2_bonus', 'below_floor',
+  'owner_etai_total', 'owner_etai_m1_amount', 'owner_etai_m2_amount',
+  'owner_noy_total', 'owner_noy_m1_amount', 'owner_noy_m2_amount',
+  'joey_m2_bonus', 'below_floor',
   'gross_amount', 'expected_m1_amount', 'expected_m2_amount'
 ];
 
@@ -119,10 +121,19 @@ async function updateDeal(id, data, userId, reason = null) {
   return getDeal(id);
 }
 
+function parseOverriddenFields(deal) {
+  try { return JSON.parse(deal.overridden_fields || '[]'); } catch (e) { return []; }
+}
+
 async function recalculate(id, userId, { force = false } = {}) {
   const deal = await get(`SELECT * FROM deals WHERE id = ?`, [id]);
   if (!deal) throw new Error('Deal not found');
-  if (deal.manual_override && !force) return deal;
+  // force clears every lock and recomputes the whole deal fresh; otherwise any individually
+  // locked field (e.g. just Joey's bonus) is skipped while everything else still recalculates.
+  const lockedFields = force ? [] : parseOverriddenFields(deal);
+  if (force) {
+    await run(`UPDATE deals SET manual_override = 0, overridden_fields = '[]' WHERE id = ?`, [id]);
+  }
 
   const adders = await all(`SELECT amount, counts_as_hard_cost FROM deal_adders WHERE deal_id = ?`, [id]);
   const payScale = await getPayScaleForRep(deal.closer_rep_id);
@@ -168,7 +179,11 @@ async function recalculate(id, userId, { force = false } = {}) {
     closer_pay_net: result.closerPayNet,
     setter_pay: result.setterPay,
     owner_etai_total: owner.etaiTotal,
+    owner_etai_m1_amount: owner.etaiM1,
+    owner_etai_m2_amount: owner.etaiM2,
     owner_noy_total: owner.noyTotal,
+    owner_noy_m1_amount: owner.noyM1,
+    owner_noy_m2_amount: owner.noyM2,
     joey_m2_bonus: joeyBonus,
     below_floor: result.belowFloor ? 1 : 0,
     gross_amount: gross,
@@ -176,17 +191,23 @@ async function recalculate(id, userId, { force = false } = {}) {
     expected_m2_amount: expectedM2
   };
 
-  await run(
-    `UPDATE deals SET net_ppw=?, pay_scale_rate=?, rep_pool=?, closer_pay_gross=?, closer_pay_net=?, setter_pay=?,
-     owner_etai_total=?, owner_noy_total=?, joey_m2_bonus=?, below_floor=?,
-     gross_amount=?, expected_m1_amount=?, expected_m2_amount=?, updated_at = datetime('now') WHERE id=?`,
-    [newValues.net_ppw, newValues.pay_scale_rate, newValues.rep_pool, newValues.closer_pay_gross,
-      newValues.closer_pay_net, newValues.setter_pay, newValues.owner_etai_total, newValues.owner_noy_total,
-      newValues.joey_m2_bonus, newValues.below_floor,
-      newValues.gross_amount, newValues.expected_m1_amount, newValues.expected_m2_amount, id]
-  );
+  // owner_etai_total/owner_noy_total always mirror their own M1+M2, so if either half is
+  // locked, lock the total along with it rather than letting it drift out of sync.
+  if (lockedFields.includes('owner_etai_m1_amount') || lockedFields.includes('owner_etai_m2_amount')) {
+    lockedFields.push('owner_etai_total');
+  }
+  if (lockedFields.includes('owner_noy_m1_amount') || lockedFields.includes('owner_noy_m2_amount')) {
+    lockedFields.push('owner_noy_total');
+  }
 
-  // A forced recalc on a deal that WAS overridden is the one case that actually discards
+  const fieldsToWrite = Object.keys(newValues).filter((f) => !lockedFields.includes(f));
+  if (fieldsToWrite.length) {
+    const setClause = fieldsToWrite.map((f) => `${f} = ?`).join(', ');
+    const values = fieldsToWrite.map((f) => newValues[f]);
+    await run(`UPDATE deals SET ${setClause}, updated_at = datetime('now') WHERE id = ?`, [...values, id]);
+  }
+
+  // A forced recalc on a deal that had locked fields is the one case that actually discards
   // someone's saved numbers — log exactly what got overwritten so it's recoverable from the
   // audit trail even if this happens again.
   if (force && deal.manual_override) {
@@ -241,8 +262,10 @@ async function setPaymentFlag(dealId, recipient, paid, date, userId) {
   const map = {
     closer: ['closer_paid', 'closer_paid_date'],
     setter: ['setter_paid', 'setter_paid_date'],
-    owner_m1: ['owner_m1_paid', 'owner_m1_paid_date'],
-    owner_m2: ['owner_m2_paid', 'owner_m2_paid_date'],
+    owner_etai_m1: ['owner_etai_m1_paid', 'owner_etai_m1_paid_date'],
+    owner_etai_m2: ['owner_etai_m2_paid', 'owner_etai_m2_paid_date'],
+    owner_noy_m1: ['owner_noy_m1_paid', 'owner_noy_m1_paid_date'],
+    owner_noy_m2: ['owner_noy_m2_paid', 'owner_noy_m2_paid_date'],
     joey: ['joey_paid', 'joey_paid_date']
   };
   const [flagField, dateField] = map[recipient];
@@ -256,18 +279,50 @@ async function setPaymentFlag(dealId, recipient, paid, date, userId) {
   return getDeal(dealId);
 }
 
+// Locks specific computed fields at admin-supplied values. Each call ADDS to whatever's
+// already locked on the deal (e.g. overriding Joey's bonus today doesn't disturb a Net PPW
+// override saved last week) — only "Turn Off & Recalculate" (recalculate with force) clears
+// every lock at once.
 async function setOverride(dealId, { override, reason, fields }, userId) {
-  await run(`UPDATE deals SET manual_override = ?, override_reason = ?, override_by = ?, override_at = datetime('now') WHERE id = ?`,
-    [override ? 1 : 0, reason || null, userId, dealId]);
-  await auditLog.logChange('deals', dealId, 'manual_override', !override, override, userId, reason);
-  if (override && fields) {
-    const allowed = fields && Object.keys(fields).filter((f) => COMPUTED_FIELDS.includes(f));
+  if (override === false) {
+    await run(`UPDATE deals SET manual_override = 0, overridden_fields = '[]', override_reason = ?, override_by = ?, override_at = datetime('now') WHERE id = ?`,
+      [reason || null, userId, dealId]);
+    await auditLog.logChange('deals', dealId, 'manual_override', true, false, userId, reason);
+    return getDeal(dealId);
+  }
+
+  if (fields) {
+    // Only fields actually present with a real value get touched — leaving a field blank
+    // means "don't change this," not "set it to zero/null."
+    const allowed = Object.keys(fields).filter((f) => COMPUTED_FIELDS.includes(f) && fields[f] !== null && fields[f] !== undefined && fields[f] !== '');
     if (allowed.length) {
       const oldRow = await get(`SELECT * FROM deals WHERE id = ?`, [dealId]);
-      const setClause = allowed.map((f) => `${f} = ?`).join(', ');
-      const values = allowed.map((f) => fields[f]);
-      await run(`UPDATE deals SET ${setClause}, updated_at = datetime('now') WHERE id = ?`, [...values, dealId]);
-      await auditLog.logDiff('deals', dealId, oldRow, fields, userId, reason || 'Manual override of computed values');
+      const finalFields = {};
+      allowed.forEach((f) => { finalFields[f] = fields[f]; });
+
+      // Etai/Noy totals are always derived from their own M1+M2 amounts, never edited
+      // directly, so they can never drift out of sync with what's actually overridden.
+      if ('owner_etai_m1_amount' in finalFields || 'owner_etai_m2_amount' in finalFields) {
+        const m1 = finalFields.owner_etai_m1_amount ?? oldRow.owner_etai_m1_amount ?? 0;
+        const m2 = finalFields.owner_etai_m2_amount ?? oldRow.owner_etai_m2_amount ?? 0;
+        finalFields.owner_etai_total = m1 + m2;
+      }
+      if ('owner_noy_m1_amount' in finalFields || 'owner_noy_m2_amount' in finalFields) {
+        const m1 = finalFields.owner_noy_m1_amount ?? oldRow.owner_noy_m1_amount ?? 0;
+        const m2 = finalFields.owner_noy_m2_amount ?? oldRow.owner_noy_m2_amount ?? 0;
+        finalFields.owner_noy_total = m1 + m2;
+      }
+
+      const finalKeys = Object.keys(finalFields);
+      const setClause = finalKeys.map((f) => `${f} = ?`).join(', ');
+      const values = finalKeys.map((f) => finalFields[f]);
+
+      const lockedFields = Array.from(new Set([...parseOverriddenFields(oldRow), ...finalKeys]));
+      await run(
+        `UPDATE deals SET ${setClause}, manual_override = 1, overridden_fields = ?, override_reason = ?, override_by = ?, override_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`,
+        [...values, JSON.stringify(lockedFields), reason || null, userId, dealId]
+      );
+      await auditLog.logDiff('deals', dealId, oldRow, finalFields, userId, reason || 'Manual override of computed values');
     }
   }
   return getDeal(dealId);

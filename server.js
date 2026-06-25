@@ -44,10 +44,11 @@ app.use('/api/referrals', requireRole('admin', 'super_admin'), require('./routes
 app.use('/api/audit', requireRole('super_admin'), require('./routes/audit'));
 app.use('/api/dashboard', requireRole('admin', 'super_admin'), require('./routes/dashboard'));
 app.use('/api/admins', requireRole('super_admin'), require('./routes/admins'));
+app.use('/api/pay-runs', requireRole('admin', 'super_admin'), require('./routes/payRuns'));
 app.use('/api/myjobs', requireRole('sales_rep'), require('./routes/myjobs'));
 app.use('/api/mypayroll', requireRole('payroll_staff'), require('./routes/mypayroll'));
 
-for (const page of ['board', 'deal', 'dashboard', 'reps', 'rep-dashboard', 'payroll-staff', 'staff-dashboard', 'installers', 'settings', 'advances', 'clawbacks', 'referrals']) {
+for (const page of ['board', 'deal', 'dashboard', 'reps', 'rep-dashboard', 'payroll-staff', 'staff-dashboard', 'installers', 'settings', 'advances', 'clawbacks', 'referrals', 'pay-runs', 'pay-run']) {
   app.get(`/admin/${page}.html`, guardPage(`admin/${page}.html`, 'admin', 'super_admin'));
 }
 app.get('/admin/admins.html', guardPage('admin/admins.html', 'super_admin'));

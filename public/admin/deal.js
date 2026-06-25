@@ -2,6 +2,7 @@ const params = new URLSearchParams(window.location.search);
 const dealId = params.get('id');
 let META = null;
 let DEAL = null;
+let SETTINGS = null;
 let overrideMode = false;
 
 function val(id) { const el = document.getElementById(id); return el ? el.value : null; }
@@ -9,6 +10,7 @@ function intval(id) { const v = val(id); return v === '' || v === null ? null : 
 function floatval(id) { const v = val(id); return v === '' || v === null ? null : parseFloat(v); }
 function checked(id) { const el = document.getElementById(id); return el ? el.checked : false; }
 function dateOrNull(v) { return v || null; }
+function round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
 
 // Disables a button for the duration of an async action so a fast double-click (or a slow
 // network response) can never fire the same create/save/delete request twice.
@@ -61,6 +63,8 @@ async function init() {
   META = await api('GET', '/api/meta');
   if (dealId) {
     DEAL = await api('GET', `/api/deals/${dealId}`);
+    const settingsResp = await api('GET', '/api/settings');
+    SETTINGS = settingsResp.commissionSettings;
     renderFull();
   } else {
     renderCreateForm();
@@ -352,6 +356,7 @@ function renderCalc() {
   if (d.below_floor) {
     html += `<div class="error-msg show" style="margin-bottom:14px;">Below the pay-scale hard floor — needs manual approval before any commission is paid.</div>`;
   }
+  html += calcRow('System Size', d.system_size_kw ? `${d.system_size_kw} kW` : '—');
   html += calcRow('Net PPW', d.net_ppw ?? '—');
   html += calcRow('Gross', fmtMoney(d.gross_amount));
   html += calcRow('Pay Scale Rate', d.pay_scale_rate ? `$${d.pay_scale_rate}/kW` : '—');
@@ -449,15 +454,38 @@ function paymentRow(label, recipient, paid, amount, paidDate) {
     </div>`;
 }
 
+// Owner/Joey rows get an editable amount on top of paid+date, since these are the figures
+// Joy needs to manually override directly (not via the Commission Calculator's override form).
+function editableAmountRow(label, recipient, paid, amount, paidDate, overrideField) {
+  return `
+    <div style="padding:10px 0; border-bottom:1px solid var(--brand-border);">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+        <strong>${label}</strong>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <input type="date" class="pay-date" data-recipient="${recipient}" value="${(paidDate || '').slice(0, 10)}" style="margin:0; padding:6px 8px; ${paid ? '' : 'display:none;'}">
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px;">
+            <input type="checkbox" class="pay-toggle" data-recipient="${recipient}" ${paid ? 'checked' : ''} style="width:auto;"> Paid
+          </label>
+        </div>
+      </div>
+      <div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
+        <input type="number" step="0.01" class="amount-override" data-field="${overrideField}" value="${amount ?? ''}" style="margin:0; max-width:140px;">
+        <button class="btn secondary small amount-save" data-field="${overrideField}" style="width:auto;">Save</button>
+      </div>
+    </div>`;
+}
+
 function renderPayment() {
   const d = DEAL;
   let html = '';
   if (d.closer_rep_id) html += paymentRow('Closer', 'closer', d.closer_paid, d.closer_pay_net, d.closer_paid_date);
   if (d.setter_rep_id) html += paymentRow('Setter', 'setter', d.setter_paid, d.setter_pay, d.setter_paid_date);
-  html += `<p class="section-title" style="margin-top:16px;">Internal Payroll (admin only)</p>`;
-  html += paymentRow('Owner M1 (Etai + Noy)', 'owner_m1', d.owner_m1_paid, d.owner_etai_total + d.owner_noy_total, d.owner_m1_paid_date);
-  html += paymentRow('Owner M2 (Etai + Noy)', 'owner_m2', d.owner_m2_paid, undefined, d.owner_m2_paid_date);
-  html += paymentRow("Joey's M2 Bonus", 'joey', d.joey_paid, d.joey_m2_bonus, d.joey_paid_date);
+  html += `<p class="section-title" style="margin-top:16px;">Internal Payroll (admin only) <span style="font-weight:400; text-transform:none; font-size:12px;">— amounts are editable, click Save to override</span></p>`;
+  html += editableAmountRow('Etai — M1', 'owner_etai_m1', d.owner_etai_m1_paid, d.owner_etai_m1_amount, d.owner_etai_m1_paid_date, 'owner_etai_m1_amount');
+  html += editableAmountRow('Etai — M2', 'owner_etai_m2', d.owner_etai_m2_paid, d.owner_etai_m2_amount, d.owner_etai_m2_paid_date, 'owner_etai_m2_amount');
+  html += editableAmountRow('Noy — M1', 'owner_noy_m1', d.owner_noy_m1_paid, d.owner_noy_m1_amount, d.owner_noy_m1_paid_date, 'owner_noy_m1_amount');
+  html += editableAmountRow('Noy — M2', 'owner_noy_m2', d.owner_noy_m2_paid, d.owner_noy_m2_amount, d.owner_noy_m2_paid_date, 'owner_noy_m2_amount');
+  html += editableAmountRow("Joey's M2 Bonus", 'joey', d.joey_paid, d.joey_m2_bonus, d.joey_paid_date, 'joey_m2_bonus');
   document.getElementById('paymentBox').innerHTML = html;
 
   async function sendPayment(recipient, paid, date) {
@@ -476,6 +504,22 @@ function renderPayment() {
   document.querySelectorAll('.pay-date').forEach((input) => {
     input.addEventListener('change', () => {
       sendPayment(input.dataset.recipient, true, input.value);
+    });
+  });
+  document.querySelectorAll('.amount-save').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const field = btn.dataset.field;
+      const input = document.querySelector(`.amount-override[data-field="${field}"]`);
+      const value = input.value;
+      if (value === '') { alert('Enter an amount before saving.'); return; }
+      const reason = prompt(`Reason for overriding this amount (required):`);
+      if (!reason) return;
+      try {
+        DEAL = await api('POST', `/api/deals/${dealId}/override`, { override: true, reason, fields: { [field]: parseFloat(value) } });
+        renderPayment();
+        renderCalc();
+        renderAudit();
+      } catch (e) { alert(e.message); }
     });
   });
 }
@@ -545,16 +589,38 @@ function wireEvents() {
     const d = DEAL;
     box.style.display = 'block';
     box.innerHTML = `
-      <label>Net PPW</label><input type="number" step="0.0001" id="ov_net_ppw" value="${d.net_ppw ?? ''}">
-      <label>Pay Scale Rate ($/kW)</label><input type="number" step="0.01" id="ov_pay_scale_rate" value="${d.pay_scale_rate ?? ''}">
-      <label>Closer Pay (net)</label><input type="number" step="0.01" id="ov_closer_pay_net" value="${d.closer_pay_net ?? ''}">
-      <label>Setter Pay</label><input type="number" step="0.01" id="ov_setter_pay" value="${d.setter_pay ?? ''}">
+      <p style="font-size:12px; color:var(--brand-muted); margin-top:0;">
+        Every field here is optional — leave blank to keep it as-is. Typing a Pay Scale Rate auto-fills
+        Closer/Setter Pay below (still editable afterward).
+      </p>
+      <label>Net PPW <span style="color:var(--brand-muted); font-weight:400;">(current: ${d.net_ppw ?? '—'})</span></label>
+      <input type="number" step="0.0001" id="ov_net_ppw" placeholder="leave blank to keep current">
+      <label>Pay Scale Rate ($/kW) <span style="color:var(--brand-muted); font-weight:400;">(current: ${d.pay_scale_rate ?? '—'})</span></label>
+      <input type="number" step="0.01" id="ov_pay_scale_rate" placeholder="leave blank to keep current">
+      <label>Closer Pay (net) <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.closer_pay_net)})</span></label>
+      <input type="number" step="0.01" id="ov_closer_pay_net" placeholder="leave blank to keep current">
+      <label>Setter Pay <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.setter_pay)})</span></label>
+      <input type="number" step="0.01" id="ov_setter_pay" placeholder="leave blank to keep current">
       <label>Reason for override (required)</label><textarea id="ov_reason" rows="2"></textarea>
       <div style="display:flex; gap:8px;">
         <button class="btn small" id="saveOverrideBtn" style="width:auto;">Save Override</button>
         ${d.manual_override ? '<button class="btn secondary small" id="clearOverrideBtn" style="width:auto;">Turn Off &amp; Recalculate</button>' : ''}
       </div>
     `;
+    document.getElementById('ov_pay_scale_rate').addEventListener('input', (e) => {
+      const rate = parseFloat(e.target.value);
+      if (isNaN(rate) || !SETTINGS) return;
+      const kw = DEAL.system_size_kw || 0;
+      const paySplit = DEAL.pay_split || 0.5;
+      const pool = rate * kw * paySplit;
+      const hasSetter = !!DEAL.setter_rep_id;
+      const setterPay = hasSetter ? pool * SETTINGS.setter_split_pct : 0;
+      const closerPayPre = hasSetter ? pool * SETTINGS.closer_split_pct : pool;
+      const cashbackDeduction = (DEAL.cashback_amount || 0) * SETTINGS.cashback_split_pct;
+      const closerNet = closerPayPre - cashbackDeduction;
+      document.getElementById('ov_closer_pay_net').value = round2(closerNet);
+      document.getElementById('ov_setter_pay').value = round2(setterPay);
+    });
     document.getElementById('saveOverrideBtn').addEventListener('click', async () => {
       const reason = val('ov_reason');
       if (!reason) { alert('Please give a reason for the override — this is logged for the audit trail.'); return; }

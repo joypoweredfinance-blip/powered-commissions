@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Commission Summary — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+<script src="/admin/admin-common.js"></script>
+<script>renderAdminShell('/admin/pay-runs.html', 'Commission Summary');</script>
+<script>
+document.getElementById('pageContent').innerHTML = `
+  <p style="color:var(--brand-muted); margin-bottom:16px; max-width:680px;">
+    Weekly pay-run report — pick a pay period (usually a Friday), select which deals/milestones
+    are being paid, and submit for Etai's approval. Matches your Breakdown + Summary spreadsheet.
+  </p>
+  <div class="card" style="margin-bottom:16px; max-width:480px;">
+    <p class="section-title">New Pay Run</p>
+    <label>Pay Period Date (Friday)</label><input type="date" id="np_date">
+    <label>Notes</label><input type="text" id="np_notes" placeholder="e.g. Paying out Roy's projects from last week">
+    <button class="btn small" id="createBtn" style="width:auto;">Create Pay Run</button>
+  </div>
+  <div class="card" style="overflow-x:auto;">
+    <table class="data-table">
+      <thead><tr><th>Pay Period</th><th>Status</th><th>Notes</th><th>Created</th></tr></thead>
+      <tbody id="runsBody"></tbody>
+    </table>
+  </div>
+`;
+
+function statusBadge(status) {
+  const map = { draft: 'muted', submitted: 'amber', approved: 'green', paid: 'green', rejected: 'muted' };
+  return `<span class="badge ${map[status] || 'muted'}">${status}</span>`;
+}
+
+async function load() {
+  const runs = await api('GET', '/api/pay-runs');
+  document.getElementById('runsBody').innerHTML = runs.length === 0
+    ? '<tr><td colspan="4" style="text-align:center; color:var(--brand-muted); padding:24px;">No pay runs yet.</td></tr>'
+    : runs.map((r) => `
+      <tr class="deal-row" data-id="${r.id}">
+        <td><strong>${fmtDate(r.pay_period_date)}</strong></td>
+        <td>${statusBadge(r.status)}</td>
+        <td style="color:var(--brand-muted); font-size:13px;">${r.notes || ''}</td>
+        <td>${fmtDate(r.created_at)}</td>
+      </tr>
+    `).join('');
+  document.querySelectorAll('#runsBody tr.deal-row').forEach((row) => {
+    row.addEventListener('click', () => { window.location.href = `/admin/pay-run.html?id=${row.dataset.id}`; });
+  });
+}
+
+document.getElementById('createBtn').addEventListener('click', async () => {
+  const pay_period_date = document.getElementById('np_date').value;
+  if (!pay_period_date) { alert('Pick a pay period date.'); return; }
+  try {
+    const run = await api('POST', '/api/pay-runs', { pay_period_date, notes: document.getElementById('np_notes').value.trim() || null });
+    window.location.href = `/admin/pay-run.html?id=${run.id}`;
+  } catch (e) { alert(e.message); }
+});
+
+load();
+</script>
+</body>
+</html>

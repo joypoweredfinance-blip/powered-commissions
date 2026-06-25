@@ -41,6 +41,11 @@ function fmtMoney(n) {
   const sign = num < 0 ? '-' : '';
   return `${sign}$${Math.abs(num).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
+function fmtDate(d) {
+  if (!d) return '—';
+  try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+  catch (e) { return d; }
+}
 async function api(method, url, body) {
   const res = await fetch(url, {
     method,

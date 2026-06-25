@@ -118,9 +118,14 @@ function calculateRepCommission({ deal, adders, payScale, settings, advanceAlrea
 }
 
 function calculateOwnerDistribution({ settings, m1Approved, m2Approved }) {
-  const etaiTotal = (m1Approved ? settings.owner_etai_m1 : 0) + (m2Approved ? settings.owner_etai_m2 : 0);
-  const noyTotal = (m1Approved ? settings.owner_noy_m1 : 0) + (m2Approved ? settings.owner_noy_m2 : 0);
-  return { etaiTotal: round2(etaiTotal), noyTotal: round2(noyTotal) };
+  const etaiM1 = m1Approved ? settings.owner_etai_m1 : 0;
+  const etaiM2 = m2Approved ? settings.owner_etai_m2 : 0;
+  const noyM1 = m1Approved ? settings.owner_noy_m1 : 0;
+  const noyM2 = m2Approved ? settings.owner_noy_m2 : 0;
+  return {
+    etaiM1: round2(etaiM1), etaiM2: round2(etaiM2), etaiTotal: round2(etaiM1 + etaiM2),
+    noyM1: round2(noyM1), noyM2: round2(noyM2), noyTotal: round2(noyM1 + noyM2)
+  };
 }
 
 // Joey's M2 bonus fires only once a deal reaches M2, tiered by the deal's Net PPW.

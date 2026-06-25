@@ -127,9 +127,13 @@ async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
 
   // Staff Pay (Etai + Noy + Joey) and Funds Received — attributed by the date each piece
   // actually got marked paid/received, filtered to the selected period (or all-time if none).
-  const settings = await get(`SELECT owner_etai_m1, owner_etai_m2, owner_noy_m1, owner_noy_m2 FROM commission_settings WHERE id = 1`);
+  // Etai and Noy each have their own paid flag/date/amount now, so this reflects whatever
+  // was actually overridden per person rather than assuming the standard $500/$500 split.
   const payRows = await all(`
-    SELECT d.owner_m1_paid, d.owner_m1_paid_date, d.owner_m2_paid, d.owner_m2_paid_date,
+    SELECT d.owner_etai_m1_paid, d.owner_etai_m1_paid_date, d.owner_etai_m1_amount,
+           d.owner_etai_m2_paid, d.owner_etai_m2_paid_date, d.owner_etai_m2_amount,
+           d.owner_noy_m1_paid, d.owner_noy_m1_paid_date, d.owner_noy_m1_amount,
+           d.owner_noy_m2_paid, d.owner_noy_m2_paid_date, d.owner_noy_m2_amount,
            d.joey_paid, d.joey_paid_date, d.joey_m2_bonus,
            d.funds_received_m1, d.funds_received_m1_date, d.funds_received_m2, d.funds_received_m2_date,
            fin.name as financier_name
@@ -140,11 +144,17 @@ async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
   let fundsReceived = 0;
   const financierTotals = {};
   for (const r of payRows) {
-    if (r.owner_m1_paid && r.owner_m1_paid_date && (!hasPeriod || inRange(r.owner_m1_paid_date, startDate, endDate))) {
-      staffPay += (settings.owner_etai_m1 || 0) + (settings.owner_noy_m1 || 0);
+    if (r.owner_etai_m1_paid && r.owner_etai_m1_paid_date && (!hasPeriod || inRange(r.owner_etai_m1_paid_date, startDate, endDate))) {
+      staffPay += r.owner_etai_m1_amount || 0;
     }
-    if (r.owner_m2_paid && r.owner_m2_paid_date && (!hasPeriod || inRange(r.owner_m2_paid_date, startDate, endDate))) {
-      staffPay += (settings.owner_etai_m2 || 0) + (settings.owner_noy_m2 || 0);
+    if (r.owner_etai_m2_paid && r.owner_etai_m2_paid_date && (!hasPeriod || inRange(r.owner_etai_m2_paid_date, startDate, endDate))) {
+      staffPay += r.owner_etai_m2_amount || 0;
+    }
+    if (r.owner_noy_m1_paid && r.owner_noy_m1_paid_date && (!hasPeriod || inRange(r.owner_noy_m1_paid_date, startDate, endDate))) {
+      staffPay += r.owner_noy_m1_amount || 0;
+    }
+    if (r.owner_noy_m2_paid && r.owner_noy_m2_paid_date && (!hasPeriod || inRange(r.owner_noy_m2_paid_date, startDate, endDate))) {
+      staffPay += r.owner_noy_m2_amount || 0;
     }
     if (r.joey_paid && r.joey_paid_date && (!hasPeriod || inRange(r.joey_paid_date, startDate, endDate))) {
       staffPay += r.joey_m2_bonus || 0;
@@ -335,20 +345,31 @@ async function getStaffDashboard(staffId) {
 
   if (staff.staff_type === 'owner') {
     const isEtai = /etai/i.test(staff.full_name);
-    const col = isEtai ? 'owner_etai_total' : 'owner_noy_total';
+    const prefix = isEtai ? 'owner_etai' : 'owner_noy';
     const deals = await all(`
-      SELECT id, customer_name, m1_approved_date, m2_approved_date, ${col} as amount, owner_m1_paid, owner_m2_paid
-      FROM deals WHERE ${col} > 0 ORDER BY COALESCE(m2_approved_date, m1_approved_date) DESC
+      SELECT id, customer_name,
+             ${prefix}_m1_amount as m1Amount, ${prefix}_m1_paid as m1Paid, ${prefix}_m1_paid_date as m1PaidDate,
+             ${prefix}_m2_amount as m2Amount, ${prefix}_m2_paid as m2Paid, ${prefix}_m2_paid_date as m2PaidDate
+      FROM deals WHERE ${prefix}_m1_amount > 0 OR ${prefix}_m2_amount > 0
+      ORDER BY id DESC
     `);
     const monthlyTotals = {};
     lastNMonths(6).forEach((m) => { monthlyTotals[m] = 0; });
     let ytdTotal = 0, allTimeTotal = 0;
     const thisYear = String(new Date().getFullYear());
     for (const d of deals) {
-      const mk = monthKey(d.m2_approved_date || d.m1_approved_date);
-      allTimeTotal += d.amount || 0;
-      if (mk && mk.startsWith(thisYear)) ytdTotal += d.amount || 0;
-      if (mk in monthlyTotals) monthlyTotals[mk] += d.amount || 0;
+      if (d.m1Paid && d.m1PaidDate) {
+        const mk = monthKey(d.m1PaidDate);
+        allTimeTotal += d.m1Amount || 0;
+        if (mk && mk.startsWith(thisYear)) ytdTotal += d.m1Amount || 0;
+        if (mk in monthlyTotals) monthlyTotals[mk] += d.m1Amount || 0;
+      }
+      if (d.m2Paid && d.m2PaidDate) {
+        const mk = monthKey(d.m2PaidDate);
+        allTimeTotal += d.m2Amount || 0;
+        if (mk && mk.startsWith(thisYear)) ytdTotal += d.m2Amount || 0;
+        if (mk in monthlyTotals) monthlyTotals[mk] += d.m2Amount || 0;
+      }
     }
     return {
       staff, type: 'owner',

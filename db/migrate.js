@@ -14,7 +14,20 @@ const COLUMN_MIGRATIONS = [
   { table: 'deals', column: 'funds_received_m1', definition: 'REAL' },
   { table: 'deals', column: 'funds_received_m1_date', definition: 'TEXT' },
   { table: 'deals', column: 'funds_received_m2', definition: 'REAL' },
-  { table: 'deals', column: 'funds_received_m2_date', definition: 'TEXT' }
+  { table: 'deals', column: 'funds_received_m2_date', definition: 'TEXT' },
+  { table: 'deals', column: 'owner_etai_m1_paid', definition: "INTEGER NOT NULL DEFAULT 0" },
+  { table: 'deals', column: 'owner_etai_m1_paid_date', definition: 'TEXT' },
+  { table: 'deals', column: 'owner_etai_m2_paid', definition: "INTEGER NOT NULL DEFAULT 0" },
+  { table: 'deals', column: 'owner_etai_m2_paid_date', definition: 'TEXT' },
+  { table: 'deals', column: 'owner_noy_m1_paid', definition: "INTEGER NOT NULL DEFAULT 0" },
+  { table: 'deals', column: 'owner_noy_m1_paid_date', definition: 'TEXT' },
+  { table: 'deals', column: 'owner_noy_m2_paid', definition: "INTEGER NOT NULL DEFAULT 0" },
+  { table: 'deals', column: 'owner_noy_m2_paid_date', definition: 'TEXT' },
+  { table: 'deals', column: 'owner_etai_m1_amount', definition: 'REAL' },
+  { table: 'deals', column: 'owner_etai_m2_amount', definition: 'REAL' },
+  { table: 'deals', column: 'owner_noy_m1_amount', definition: 'REAL' },
+  { table: 'deals', column: 'owner_noy_m2_amount', definition: 'REAL' },
+  { table: 'deals', column: 'overridden_fields', definition: "TEXT NOT NULL DEFAULT '[]'" }
 ];
 
 async function columnExists(table, column) {
@@ -41,6 +54,71 @@ async function runMigrations() {
       console.log(`Migration: promoted ${originalAdmin.email} to super_admin`);
     }
   }
+
+  // One-time data carry-over: older deals tracked a single combined "owner_m1_paid" flag
+  // for Etai+Noy together. Now that each has their own paid flag, copy the old combined
+  // value into both — best-effort preservation, not a guess, since historically they were
+  // always paid together on the same date. Only touches rows where the new fields are still
+  // at their default (0), so re-running this is harmless and it never overwrites a real edit.
+  if (await columnExists('deals', 'owner_m1_paid')) {
+    await run(`
+      UPDATE deals SET owner_etai_m1_paid = owner_m1_paid, owner_etai_m1_paid_date = owner_m1_paid_date
+      WHERE owner_m1_paid = 1 AND owner_etai_m1_paid = 0
+    `);
+    await run(`
+      UPDATE deals SET owner_noy_m1_paid = owner_m1_paid, owner_noy_m1_paid_date = owner_m1_paid_date
+      WHERE owner_m1_paid = 1 AND owner_noy_m1_paid = 0
+    `);
+    await run(`
+      UPDATE deals SET owner_etai_m2_paid = owner_m2_paid, owner_etai_m2_paid_date = owner_m2_paid_date
+      WHERE owner_m2_paid = 1 AND owner_etai_m2_paid = 0
+    `);
+    await run(`
+      UPDATE deals SET owner_noy_m2_paid = owner_m2_paid, owner_noy_m2_paid_date = owner_m2_paid_date
+      WHERE owner_m2_paid = 1 AND owner_noy_m2_paid = 0
+    `);
+    console.log('Migration: carried over combined owner M1/M2 paid flags into separate Etai/Noy fields');
+  }
+
+  // Same idea for the combined owner_etai_total/owner_noy_total — split into separate M1/M2
+  // amounts so each can be overridden independently. Derived the correct way: from whether
+  // M1/M2 was actually approved on that deal, times the real settings amount for each — NOT
+  // a 50/50 guess off the combined total, which would be wrong for deals only at M1 so far.
+  const settingsRow = await get(`SELECT owner_etai_m1, owner_etai_m2, owner_noy_m1, owner_noy_m2 FROM commission_settings WHERE id = 1`);
+  if (settingsRow) {
+    const needsSplit = await all(`
+      SELECT id, m1_approved_date, m2_approved_date FROM deals
+      WHERE owner_etai_total IS NOT NULL AND owner_etai_m1_amount IS NULL
+    `);
+    for (const d of needsSplit) {
+      const etaiM1 = d.m1_approved_date ? settingsRow.owner_etai_m1 : 0;
+      const etaiM2 = d.m2_approved_date ? settingsRow.owner_etai_m2 : 0;
+      const noyM1 = d.m1_approved_date ? settingsRow.owner_noy_m1 : 0;
+      const noyM2 = d.m2_approved_date ? settingsRow.owner_noy_m2 : 0;
+      await run(
+        `UPDATE deals SET owner_etai_m1_amount = ?, owner_etai_m2_amount = ?, owner_noy_m1_amount = ?, owner_noy_m2_amount = ? WHERE id = ?`,
+        [etaiM1, etaiM2, noyM1, noyM2, d.id]
+      );
+    }
+    if (needsSplit.length) console.log(`Migration: derived owner M1/M2 amount split for ${needsSplit.length} deal(s)`);
+  }
+
+  // Overrides used to freeze every computed field on a deal at once. Now a deal can have
+  // specific fields locked while everything else keeps auto-calculating. Any deal that was
+  // already overridden under the old all-or-nothing system gets every computed field locked
+  // here, preserving exactly the protection it already had — nothing it was relying on
+  // becomes newly recalculable by surprise.
+  const ALL_COMPUTED_FIELDS = [
+    'net_ppw', 'pay_scale_rate', 'rep_pool', 'closer_pay_gross', 'closer_pay_net', 'setter_pay',
+    'owner_etai_total', 'owner_etai_m1_amount', 'owner_etai_m2_amount',
+    'owner_noy_total', 'owner_noy_m1_amount', 'owner_noy_m2_amount',
+    'joey_m2_bonus', 'below_floor', 'gross_amount', 'expected_m1_amount', 'expected_m2_amount'
+  ];
+  const legacyOverrides = await all(`SELECT id FROM deals WHERE manual_override = 1 AND overridden_fields = '[]'`);
+  for (const d of legacyOverrides) {
+    await run(`UPDATE deals SET overridden_fields = ? WHERE id = ?`, [JSON.stringify(ALL_COMPUTED_FIELDS), d.id]);
+  }
+  if (legacyOverrides.length) console.log(`Migration: locked all computed fields for ${legacyOverrides.length} pre-existing overridden deal(s)`);
 }
 
 module.exports = { runMigrations, columnExists };

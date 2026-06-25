@@ -25,7 +25,13 @@ async function load() {
       <div class="kpi-mini" style="grid-column:span 2;"><div class="label">Deals Counted</div><div class="value">${d.kpis.dealCount}</div></div>
     `;
     ledgerHtml = d.ledger.map((l) => `
-      <div class="detail-row"><span class="lbl">${l.customer_name} <span style="color:var(--brand-muted); font-size:11px;">(M1 ${l.m1_approved_date ? '✓' : '—'} / M2 ${l.m2_approved_date ? '✓' : '—'})</span></span><span class="val">${fmtMoney(l.amount)}</span></div>
+      <div class="detail-row" style="display:block;">
+        <div style="font-weight:600; margin-bottom:2px;">${l.customer_name}</div>
+        <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--brand-muted);">
+          <span>M1: ${fmtMoney(l.m1Amount)} ${l.m1Paid ? '✓ ' + fmtDate(l.m1PaidDate) : '(unpaid)'}</span>
+          <span>M2: ${fmtMoney(l.m2Amount)} ${l.m2Paid ? '✓ ' + fmtDate(l.m2PaidDate) : '(unpaid)'}</span>
+        </div>
+      </div>
     `).join('');
   } else if (d.type === 'pm') {
     kpiHtml = `
