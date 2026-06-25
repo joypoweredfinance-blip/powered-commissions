@@ -186,6 +186,13 @@ async function recalculate(id, userId, { force = false } = {}) {
       newValues.gross_amount, newValues.expected_m1_amount, newValues.expected_m2_amount, id]
   );
 
+  // A forced recalc on a deal that WAS overridden is the one case that actually discards
+  // someone's saved numbers — log exactly what got overwritten so it's recoverable from the
+  // audit trail even if this happens again.
+  if (force && deal.manual_override) {
+    await auditLog.logDiff('deals', id, deal, newValues, userId, 'Recalculated over a manual override — previous values shown as "old"');
+  }
+
   return getDeal(id);
 }
 

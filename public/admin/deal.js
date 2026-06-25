@@ -520,8 +520,12 @@ function wireEvents() {
   }));
 
   document.getElementById('recalcBtn').addEventListener('click', (e) => guardedClick(e.target, 'Recalculating…', async () => {
+    if (DEAL.manual_override) {
+      alert('This deal has a manual override active, so Recalculate won\'t touch it — your saved numbers are safe. To discard the override and recompute from scratch, use "Edit Override" → "Turn Off & Recalculate" instead.');
+      return;
+    }
     try {
-      DEAL = await api('POST', `/api/deals/${dealId}/recalculate`, { force: true });
+      DEAL = await api('POST', `/api/deals/${dealId}/recalculate`, {});
       renderCalc();
     } catch (e2) { alert(e2.message); }
   }));
@@ -573,6 +577,7 @@ function wireEvents() {
     });
     const clearBtn = document.getElementById('clearOverrideBtn');
     if (clearBtn) clearBtn.addEventListener('click', async () => {
+      if (!confirm('This will discard the manual override and replace it with freshly computed numbers. This cannot be undone — continue?')) return;
       try {
         DEAL = await api('POST', `/api/deals/${dealId}/override`, { override: false, reason: 'Override removed' });
         DEAL = await api('POST', `/api/deals/${dealId}/recalculate`, { force: true });
