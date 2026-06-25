@@ -100,6 +100,58 @@ async function getOverallDashboard({ statusIds, month } = {}) {
   const outstandingAdvances = await get(`SELECT COALESCE(SUM(amount - amount_deducted), 0) c FROM advances WHERE status != 'deducted'`);
   const openClawbacks = await get(`SELECT COUNT(*) cnt, COALESCE(SUM(total_clawback), 0) total FROM clawbacks WHERE deducted = 0`);
 
+  // Staff Pay (Etai + Noy + Joey) and Funds Received — same This Month / YTD pattern as
+  // Commissions Paid above, attributed by the date each piece actually got marked paid/received.
+  const settings = await get(`SELECT owner_etai_m1, owner_etai_m2, owner_noy_m1, owner_noy_m2 FROM commission_settings WHERE id = 1`);
+  const payRows = await all(`
+    SELECT d.owner_m1_paid, d.owner_m1_paid_date, d.owner_m2_paid, d.owner_m2_paid_date,
+           d.joey_paid, d.joey_paid_date, d.joey_m2_bonus,
+           d.funds_received_m1, d.funds_received_m1_date, d.funds_received_m2, d.funds_received_m2_date,
+           fin.name as financier_name
+    FROM deals d LEFT JOIN financiers fin ON fin.id = d.financier_id
+    WHERE 1=1 ${statusFilterSql}
+  `);
+  let staffPayThisMonth = 0, staffPayYTD = 0;
+  let fundsReceivedThisMonth = 0, fundsReceivedYTD = 0;
+  const financierTotals = {};
+  for (const r of payRows) {
+    if (r.owner_m1_paid && r.owner_m1_paid_date) {
+      const mk = monthKey(r.owner_m1_paid_date);
+      const amt = (settings.owner_etai_m1 || 0) + (settings.owner_noy_m1 || 0);
+      if (mk === thisMonth) staffPayThisMonth += amt;
+      if (mk && mk.startsWith(thisYear)) staffPayYTD += amt;
+    }
+    if (r.owner_m2_paid && r.owner_m2_paid_date) {
+      const mk = monthKey(r.owner_m2_paid_date);
+      const amt = (settings.owner_etai_m2 || 0) + (settings.owner_noy_m2 || 0);
+      if (mk === thisMonth) staffPayThisMonth += amt;
+      if (mk && mk.startsWith(thisYear)) staffPayYTD += amt;
+    }
+    if (r.joey_paid && r.joey_paid_date) {
+      const mk = monthKey(r.joey_paid_date);
+      const amt = r.joey_m2_bonus || 0;
+      if (mk === thisMonth) staffPayThisMonth += amt;
+      if (mk && mk.startsWith(thisYear)) staffPayYTD += amt;
+    }
+    if (r.funds_received_m1 && r.funds_received_m1_date) {
+      const mk = monthKey(r.funds_received_m1_date);
+      if (mk === thisMonth) fundsReceivedThisMonth += r.funds_received_m1;
+      if (mk && mk.startsWith(thisYear)) fundsReceivedYTD += r.funds_received_m1;
+      const fname = r.financier_name || 'Unknown';
+      financierTotals[fname] = (financierTotals[fname] || 0) + r.funds_received_m1;
+    }
+    if (r.funds_received_m2 && r.funds_received_m2_date) {
+      const mk = monthKey(r.funds_received_m2_date);
+      if (mk === thisMonth) fundsReceivedThisMonth += r.funds_received_m2;
+      if (mk && mk.startsWith(thisYear)) fundsReceivedYTD += r.funds_received_m2;
+      const fname = r.financier_name || 'Unknown';
+      financierTotals[fname] = (financierTotals[fname] || 0) + r.funds_received_m2;
+    }
+  }
+  const fundsByFinancier = Object.entries(financierTotals)
+    .map(([name, total]) => ({ name, total: round2(total) }))
+    .sort((a, b) => b.total - a.total);
+
   const pipeline = await all(`
     SELECT ds.id, ds.label, ds.phase, ds.sort_order, COUNT(d.id) as count
     FROM deal_statuses ds LEFT JOIN deals d ON d.status_id = ds.id
@@ -179,11 +231,14 @@ async function getOverallDashboard({ statusIds, month } = {}) {
       totalDeals: totalDeals.c,
       fundedThisMonth, fundedYTD,
       paidThisMonth: round2(paidThisMonth), paidYTD: round2(paidYTD),
+      staffPayThisMonth: round2(staffPayThisMonth), staffPayYTD: round2(staffPayYTD),
+      fundsReceivedThisMonth: round2(fundsReceivedThisMonth), fundsReceivedYTD: round2(fundsReceivedYTD),
       pendingApproval: round2(pendingApproval),
       outstandingAdvances: round2(outstandingAdvances.c),
       openClawbackCount: openClawbacks.cnt, openClawbackTotal: round2(openClawbacks.total)
     },
     fundingStatus,
+    fundsByFinancier,
     monthlyTrend: lastNMonths(6).map((m) => ({ month: m, total: round2(monthlyTotals[m]) })),
     weeklyBreakdown,
     pipeline,

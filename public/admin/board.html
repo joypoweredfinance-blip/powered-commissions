@@ -29,10 +29,11 @@ document.getElementById('pageContent').innerHTML = `
       <thead>
         <tr>
           <th>Customer</th><th>Closer</th><th>Setter</th><th>kW</th><th>Net PPW</th>
-          <th>Closer Pay</th><th>Setter Pay</th><th>Approved</th><th>Installer</th>
+          <th>Closer Pay</th><th>Setter Pay</th><th>Staff Pay</th><th>Funds Received</th>
+          <th>Approved</th><th>Installer</th><th>Financier</th>
         </tr>
       </thead>
-      <tbody id="dealsBody"><tr><td colspan="9" style="text-align:center; color:var(--brand-muted); padding:30px;">Loading…</td></tr></tbody>
+      <tbody id="dealsBody"><tr><td colspan="12" style="text-align:center; color:var(--brand-muted); padding:30px;">Loading…</td></tr></tbody>
     </table>
   </div>
 `;
@@ -68,16 +69,18 @@ async function loadDeals() {
   const deals = await api('GET', `/api/deals?${params.toString()}`);
   const tbody = document.getElementById('dealsBody');
   if (deals.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:var(--brand-muted); padding:30px;">No deals yet. Click "+ New Deal" to add your first one.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:var(--brand-muted); padding:30px;">No deals yet. Click "+ New Deal" to add your first one.</td></tr>`;
     return;
   }
   let html = '';
   let lastStatus = null;
   for (const d of deals) {
     if (d.status_label !== lastStatus) {
-      html += `<tr class="group-row"><td colspan="9">${d.status_label || 'No Status'}</td></tr>`;
+      html += `<tr class="group-row"><td colspan="12">${d.status_label || 'No Status'}</td></tr>`;
       lastStatus = d.status_label;
     }
+    const staffPay = (d.owner_etai_total || 0) + (d.owner_noy_total || 0) + (d.joey_m2_bonus || 0);
+    const fundsReceived = (d.funds_received_m1 || 0) + (d.funds_received_m2 || 0);
     html += `
       <tr class="deal-row" data-id="${d.id}">
         <td><strong>${d.customer_name}</strong><br><span style="color:var(--brand-muted); font-size:12px;">${d.customer_address || ''}</span></td>
@@ -87,8 +90,11 @@ async function loadDeals() {
         <td>${d.below_floor ? '<span class="badge amber">Below floor</span>' : (d.net_ppw ?? '—')}</td>
         <td>${fmtMoney(d.closer_pay_net)}</td>
         <td>${fmtMoney(d.setter_pay)}</td>
+        <td>${fmtMoney(staffPay)}</td>
+        <td>${fmtMoney(fundsReceived)}</td>
         <td>${approvalBadge(d)}</td>
         <td>${d.installer_name || '—'}</td>
+        <td>${d.financier_name || '—'}</td>
       </tr>
     `;
   }

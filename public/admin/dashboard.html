@@ -50,6 +50,10 @@ document.getElementById('pageContent').innerHTML = `
         <p class="section-title">Rep Leaderboard</p>
         <div id="leaderboard"></div>
       </div>
+      <div class="card" style="margin-bottom:20px;">
+        <p class="section-title">Funds Received by Financier</p>
+        <div id="financierBreakdown"></div>
+      </div>
       <div class="card" id="activityCard" style="display:none;">
         <p class="section-title">Recent Activity</p>
         <div id="activity" style="max-height:360px; overflow-y:auto;"></div>
@@ -143,10 +147,21 @@ async function load() {
     kpiCard('Active Deals', k.activeDeals, `${k.totalDeals} total all-time`),
     kpiCard('Funded This Month', k.fundedThisMonth, `${k.fundedYTD} YTD`),
     kpiCard('Commissions Paid', fmtMoney(k.paidThisMonth), `${fmtMoney(k.paidYTD)} YTD`),
+    kpiCard('Funds Received', fmtMoney(k.fundsReceivedThisMonth), `${fmtMoney(k.fundsReceivedYTD)} YTD`),
+    kpiCard('Staff Pay (Etai + Noy + Joey)', fmtMoney(k.staffPayThisMonth), `${fmtMoney(k.staffPayYTD)} YTD`),
     kpiCard('Pending Approval', fmtMoney(k.pendingApproval), 'not yet visible to reps'),
     kpiCard('Outstanding Advances', fmtMoney(k.outstandingAdvances)),
     kpiCard('Open Clawbacks', k.openClawbackCount, fmtMoney(k.openClawbackTotal))
   ].join('');
+
+  document.getElementById('financierBreakdown').innerHTML = !d.fundsByFinancier || d.fundsByFinancier.length === 0
+    ? '<p style="color:var(--brand-muted); font-size:13px;">No funds received logged yet.</p>'
+    : d.fundsByFinancier.map((f) => `
+      <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--brand-border);">
+        <span>${f.name}</span>
+        <strong>${fmtMoney(f.total)}</strong>
+      </div>
+    `).join('');
 
   if (chartInstance) chartInstance.destroy();
   if (d.weeklyBreakdown) {
