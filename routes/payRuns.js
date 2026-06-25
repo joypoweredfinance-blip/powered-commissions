@@ -35,6 +35,11 @@ router.post('/:id/deals/:dealId', async (req, res) => {
   catch (err) { res.status(400).json({ error: err.message }); }
 });
 
+router.put('/:id/deals/:dealId/austin-kw', async (req, res) => {
+  try { res.json(await payRunService.setAustinKwOverride(req.params.id, req.params.dealId, req.body.kw === '' || req.body.kw === null ? null : Number(req.body.kw), req.user.id)); }
+  catch (err) { res.status(400).json({ error: err.message }); }
+});
+
 router.post('/:id/adhoc', async (req, res) => {
   try { res.status(201).json(await payRunService.addAdhocItem(req.params.id, req.body, req.user.id)); }
   catch (err) { res.status(400).json({ error: err.message }); }

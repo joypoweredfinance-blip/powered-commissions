@@ -17,29 +17,28 @@ let ALL_STATUSES = [];
 let SELECTED_STATUS_IDS = [];
 let DATE_RANGE = null; // { startDate, endDate } or null for All Time
 let chartInstance = null;
+let pieInstance = null;
 
 document.getElementById('pageContent').innerHTML = `
-  <div class="card" style="margin-bottom:18px;">
-    <div class="filter-toolbar" style="margin-bottom:0;">
-      <div>
-        <div style="font-size:12px; font-weight:700; color:var(--brand-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Filter by Date</div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-          <select id="dateTypeFilter" style="margin:0; max-width:160px;">
-            <option value="all">All Time</option>
-            <option value="year">Year</option>
-            <option value="month">Month</option>
-            <option value="week">Week</option>
-            <option value="range">Custom Range</option>
-          </select>
-          <div id="dateSecondaryControls" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
-        </div>
+  <div class="filter-grid" style="margin-bottom:18px;">
+    <div class="card filter-card">
+      <div style="font-size:12px; font-weight:700; color:var(--brand-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Filter by Date</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <select id="dateTypeFilter" style="margin:0; max-width:160px;">
+          <option value="all">All Time</option>
+          <option value="year">Year</option>
+          <option value="month">Month</option>
+          <option value="week">Week</option>
+          <option value="range">Custom Range</option>
+        </select>
+        <div id="dateSecondaryControls" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
       </div>
-      <div class="status-filter-wrap">
-        <div style="font-size:12px; font-weight:700; color:var(--brand-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Filter by Status</div>
-        <button class="btn secondary small" id="statusFilterBtn" style="width:auto;">Filter by Status ▾</button>
-        <div class="status-filter-panel" id="statusFilterPanel" style="display:none;"></div>
-      </div>
-      <span id="filterSummary" style="font-size:12px; color:var(--brand-muted); align-self:flex-end; margin-bottom:6px;"></span>
+    </div>
+    <div class="card filter-card status-filter-wrap">
+      <div style="font-size:12px; font-weight:700; color:var(--brand-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Filter by Status</div>
+      <button class="btn secondary small" id="statusFilterBtn" style="width:auto;">Filter by Status ▾</button>
+      <span id="filterSummary" style="font-size:12px; color:var(--brand-muted); margin-left:10px;"></span>
+      <div class="status-filter-panel" id="statusFilterPanel" style="display:none;"></div>
     </div>
   </div>
 
@@ -52,6 +51,10 @@ document.getElementById('pageContent').innerHTML = `
       <div class="card" style="margin-bottom:20px;">
         <p class="section-title" id="trendTitle">Commissions Paid vs Funds Received</p>
         <div style="height:240px;"><canvas id="trendChart"></canvas></div>
+      </div>
+      <div class="card" style="margin-bottom:20px;">
+        <p class="section-title">Contract Value — Where It Goes</p>
+        <div style="height:300px;"><canvas id="pieChart"></canvas></div>
       </div>
       <div class="card">
         <p class="section-title">Pipeline by Status</p>
@@ -73,6 +76,9 @@ document.getElementById('pageContent').innerHTML = `
       </div>
     </div>
   </div>
+
+  <p class="section-title" style="margin-top:24px;">Outstanding Items</p>
+  <div class="kpi-grid" id="outstandingGrid"></div>
 `;
 
 function kpiCard(label, value, sub, cls = '') {
@@ -212,24 +218,36 @@ async function load() {
     kpiCard('Commissions Paid', fmtMoney(k.commissionsPaid), d.periodLabel),
     kpiCard('Funds Received', fmtMoney(k.fundsReceived), d.periodLabel),
     kpiCard('Staff Pay (Etai + Noy + Joey)', fmtMoney(k.staffPay), d.periodLabel),
-    kpiCard('Pending Approval', fmtMoney(k.pendingApproval), 'not yet visible to reps'),
+    kpiCard('Pending Approval', fmtMoney(k.pendingApproval), 'not yet visible to reps')
+  ].join('');
+
+  document.getElementById('outstandingGrid').innerHTML = [
     kpiCard('Outstanding Advances', fmtMoney(k.outstandingAdvances)),
-    kpiCard('Open Clawbacks', k.openClawbackCount, fmtMoney(k.openClawbackTotal))
+    kpiCard('Open Clawbacks', k.openClawbackCount, fmtMoney(k.openClawbackTotal)),
+    kpiCard('Pending Referrals', k.pendingReferralCount, fmtMoney(k.pendingReferralTotal))
   ].join('');
 
   document.getElementById('financierBreakdown').innerHTML = !d.fundsByFinancier || d.fundsByFinancier.length === 0
     ? '<p style="color:var(--brand-muted); font-size:13px;">No funds received logged yet.</p>'
-    : d.fundsByFinancier.map((f) => `
-      <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--brand-border);">
-        <span>${f.name}</span>
-        <strong>${fmtMoney(f.total)}</strong>
+    : `
+      <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:2px solid var(--brand-border); font-weight:700;">
+        <span>All Financiers</span>
+        <strong>${fmtMoney(d.fundsByFinancierTotal)}</strong>
       </div>
-    `).join('');
+      ${d.fundsByFinancier.map((f) => `
+        <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--brand-border);">
+          <span>${f.name}</span>
+          <strong>${fmtMoney(f.total)}</strong>
+        </div>
+      `).join('')}
+    `;
 
   if (chartInstance) chartInstance.destroy();
   document.getElementById('trendTitle').textContent = `Commissions Paid vs Funds Received — ${d.periodLabel}`;
   chartInstance = renderWeeklyComparisonChart('trendChart', d.chartBreakdown);
   renderFunnelChart('funnelChart', d.pipeline);
+  if (pieInstance) pieInstance.destroy();
+  pieInstance = d.contractBreakdown.slices.length === 0 ? null : renderContractPieChart('pieChart', d.contractBreakdown);
 
   document.getElementById('leaderboard').innerHTML = d.leaderboard.length === 0
     ? '<p style="color:var(--brand-muted); font-size:13px;">No paid commissions yet.</p>'

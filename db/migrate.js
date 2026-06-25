@@ -27,7 +27,22 @@ const COLUMN_MIGRATIONS = [
   { table: 'deals', column: 'owner_etai_m2_amount', definition: 'REAL' },
   { table: 'deals', column: 'owner_noy_m1_amount', definition: 'REAL' },
   { table: 'deals', column: 'owner_noy_m2_amount', definition: 'REAL' },
-  { table: 'deals', column: 'overridden_fields', definition: "TEXT NOT NULL DEFAULT '[]'" }
+  { table: 'deals', column: 'overridden_fields', definition: "TEXT NOT NULL DEFAULT '[]'" },
+  { table: 'deals', column: 'austin_paid', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'deals', column: 'austin_paid_date', definition: 'TEXT' },
+  { table: 'reps', column: 'first_name', definition: 'TEXT' },
+  { table: 'reps', column: 'last_name', definition: 'TEXT' },
+  { table: 'reps', column: 'account_info', definition: 'TEXT' },
+  { table: 'reps', column: 'pay_type', definition: "TEXT NOT NULL DEFAULT 'commission'" },
+  { table: 'reps', column: 'weekly_amount', definition: 'REAL' },
+  { table: 'payroll_staff', column: 'first_name', definition: 'TEXT' },
+  { table: 'payroll_staff', column: 'last_name', definition: 'TEXT' },
+  { table: 'payroll_staff', column: 'phone', definition: 'TEXT' },
+  { table: 'payroll_staff', column: 'account_info', definition: 'TEXT' },
+  { table: 'pay_run_deals', column: 'include_austin', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'pay_run_deals', column: 'austin_kw_override', definition: 'REAL' },
+  { table: 'pay_run_adhoc', column: 'rep_id', definition: 'INTEGER REFERENCES reps(id)' },
+  { table: 'pay_run_adhoc', column: 'staff_id', definition: 'INTEGER REFERENCES payroll_staff(id)' }
 ];
 
 async function columnExists(table, column) {
@@ -119,6 +134,20 @@ async function runMigrations() {
     await run(`UPDATE deals SET overridden_fields = ? WHERE id = ?`, [JSON.stringify(ALL_COMPUTED_FIELDS), d.id]);
   }
   if (legacyOverrides.length) console.log(`Migration: locked all computed fields for ${legacyOverrides.length} pre-existing overridden deal(s)`);
+
+  // Best-effort one-time split of the existing single full_name into first/last for the new
+  // editable profile fields — full_name itself is untouched and stays the source of truth for
+  // display everywhere; first/last are just a starting point Joy can correct in the UI.
+  for (const table of ['reps', 'payroll_staff']) {
+    const rows = await all(`SELECT id, full_name FROM ${table} WHERE first_name IS NULL`);
+    for (const r of rows) {
+      const parts = (r.full_name || '').trim().split(/\s+/);
+      const first = parts[0] || null;
+      const last = parts.length > 1 ? parts.slice(1).join(' ') : null;
+      await run(`UPDATE ${table} SET first_name = ?, last_name = ? WHERE id = ?`, [first, last, r.id]);
+    }
+    if (rows.length) console.log(`Migration: split full_name into first/last for ${rows.length} row(s) in ${table}`);
+  }
 }
 
 module.exports = { runMigrations, columnExists };

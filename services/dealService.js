@@ -266,7 +266,8 @@ async function setPaymentFlag(dealId, recipient, paid, date, userId) {
     owner_etai_m2: ['owner_etai_m2_paid', 'owner_etai_m2_paid_date'],
     owner_noy_m1: ['owner_noy_m1_paid', 'owner_noy_m1_paid_date'],
     owner_noy_m2: ['owner_noy_m2_paid', 'owner_noy_m2_paid_date'],
-    joey: ['joey_paid', 'joey_paid_date']
+    joey: ['joey_paid', 'joey_paid_date'],
+    austin: ['austin_paid', 'austin_paid_date']
   };
   const [flagField, dateField] = map[recipient];
   if (dateField) {

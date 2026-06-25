@@ -145,7 +145,8 @@ router.get('/:id', async (req, res) => {
     const deals = await visibleDeals(req.user.rep_id);
     const deal = deals.find((d) => String(d.id) === String(req.params.id));
     if (!deal) return res.status(404).json({ error: 'Job not found or not yet approved for your view.' });
-    res.json(shapeForRole(deal));
+    const adders = await all(`SELECT label, category, amount FROM deal_adders WHERE deal_id = ? ORDER BY sort_order, id`, [deal.id]);
+    res.json({ ...shapeForRole(deal), adders });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

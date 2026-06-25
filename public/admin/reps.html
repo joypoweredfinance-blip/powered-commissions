@@ -12,6 +12,7 @@
 <script>renderAdminShell('/admin/reps.html', 'Sales Reps');</script>
 <script>
 let SCALES = [];
+let REPS = [];
 
 document.getElementById('pageContent').innerHTML = `
   <div class="toolbar">
@@ -19,7 +20,10 @@ document.getElementById('pageContent').innerHTML = `
   </div>
   <div class="card" id="addRepCard" style="display:none; margin-bottom:16px; max-width:480px;">
     <p class="section-title">New Rep</p>
-    <label>Full Name</label><input type="text" id="nr_full_name">
+    <div class="field-row">
+      <div><label>First Name</label><input type="text" id="nr_first_name"></div>
+      <div><label>Last Name</label><input type="text" id="nr_last_name"></div>
+    </div>
     <label>Display Name (short, e.g. "Roy F")</label><input type="text" id="nr_display_name">
     <div class="field-row">
       <div><label>Type</label><select id="nr_rep_type"><option value="closer">Closer</option><option value="setter">Setter</option><option value="both">Both</option></select></div>
@@ -51,17 +55,62 @@ function scaleSelect(repId, currentScaleId) {
   </select>`;
 }
 
+function editPanelHtml(r) {
+  return `
+    <tr class="edit-row" data-edit-for="${r.id}" style="display:none;">
+      <td colspan="6">
+        <div class="card" style="background:var(--brand-bg); margin:8px 0;">
+          <p class="section-title">Edit Profile <span style="font-weight:400; text-transform:none; font-size:12px;">— admin/super admin only, never visible to the rep</span></p>
+          <div class="field-row">
+            <div><label>First Name</label><input type="text" class="ed-first" value="${r.first_name || ''}"></div>
+            <div><label>Last Name</label><input type="text" class="ed-last" value="${r.last_name || ''}"></div>
+          </div>
+          <div class="field-row">
+            <div><label>Display Name</label><input type="text" class="ed-display" value="${r.display_name || ''}"></div>
+            <div><label>Phone</label><input type="text" class="ed-phone" value="${r.phone || ''}"></div>
+          </div>
+          <label>Email</label><input type="email" class="ed-email" value="${r.email || ''}">
+          <div class="field-row">
+            <div>
+              <label>Pay Type</label>
+              <select class="ed-pay-type">
+                <option value="commission" ${r.pay_type !== 'weekly' ? 'selected' : ''}>Commission (per deal)</option>
+                <option value="weekly" ${r.pay_type === 'weekly' ? 'selected' : ''}>Weekly (flat amount)</option>
+              </select>
+            </div>
+            <div class="ed-weekly-wrap" style="${r.pay_type === 'weekly' ? '' : 'display:none;'}">
+              <label>Weekly Amount ($)</label><input type="number" step="0.01" class="ed-weekly-amount" value="${r.weekly_amount ?? ''}">
+            </div>
+          </div>
+          <label>Account / Payment Info</label>
+          <textarea class="ed-account-info" rows="2" placeholder="e.g. Zelle, bank details, Venmo handle">${r.account_info || ''}</textarea>
+          <label>Notes</label>
+          <textarea class="ed-notes" rows="2" placeholder="Internal notes — never shown to the rep">${r.notes || ''}</textarea>
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <button class="btn small ed-save" data-id="${r.id}" style="width:auto;">Save Profile</button>
+            <button class="btn secondary small ed-cancel" data-id="${r.id}" style="width:auto;">Cancel</button>
+          </div>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
 async function loadReps() {
-  const reps = await api('GET', '/api/reps');
-  document.getElementById('repsBody').innerHTML = reps.map((r) => `
+  REPS = await api('GET', '/api/reps');
+  document.getElementById('repsBody').innerHTML = REPS.map((r) => `
     <tr data-id="${r.id}">
-      <td><a href="/admin/rep-dashboard.html?id=${r.id}"><strong>${r.full_name}</strong></a>${r.display_name ? `<br><span style="color:var(--brand-muted); font-size:12px;">${r.display_name}</span>` : ''}</td>
+      <td><a href="/admin/rep-dashboard.html?id=${r.id}"><strong>${r.full_name}</strong></a>${r.display_name ? `<br><span style="color:var(--brand-muted); font-size:12px;">${r.display_name}</span>` : ''}${r.pay_type === 'weekly' ? '<br><span class="badge amber">Weekly Pay</span>' : ''}</td>
       <td>${r.rep_type}</td>
       <td>${scaleSelect(r.id, r.pay_scale_id)}</td>
       <td>${r.login_email ? `<span class="badge green">${r.login_email}</span> <button class="btn secondary small reset-pw-btn" data-id="${r.id}" style="width:auto;">Reset Password</button>` : `<button class="btn secondary small create-login-btn" data-id="${r.id}" style="width:auto;">Create Login</button>`}</td>
       <td>${r.active ? '<span class="badge green">Active</span>' : '<span class="badge muted">Inactive</span>'}</td>
-      <td><button class="btn secondary small toggle-active-btn" data-id="${r.id}" data-active="${r.active}" style="width:auto;">${r.active ? 'Deactivate' : 'Reactivate'}</button></td>
+      <td>
+        <button class="btn secondary small edit-profile-btn" data-id="${r.id}" style="width:auto;">Edit Profile</button>
+        <button class="btn secondary small toggle-active-btn" data-id="${r.id}" data-active="${r.active}" style="width:auto;">${r.active ? 'Deactivate' : 'Reactivate'}</button>
+      </td>
     </tr>
+    ${editPanelHtml(r)}
   `).join('');
 
   document.querySelectorAll('.scale-select').forEach((sel) => {
@@ -97,6 +146,42 @@ async function loadReps() {
       } catch (e) { alert(e.message); }
     });
   });
+  document.querySelectorAll('.edit-profile-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const row = document.querySelector(`tr.edit-row[data-edit-for="${btn.dataset.id}"]`);
+      row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+    });
+  });
+  document.querySelectorAll('.ed-cancel').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelector(`tr.edit-row[data-edit-for="${btn.dataset.id}"]`).style.display = 'none';
+    });
+  });
+  document.querySelectorAll('.ed-pay-type').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      const wrap = sel.closest('.card').querySelector('.ed-weekly-wrap');
+      wrap.style.display = sel.value === 'weekly' ? '' : 'none';
+    });
+  });
+  document.querySelectorAll('.ed-save').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const panel = document.querySelector(`tr.edit-row[data-edit-for="${btn.dataset.id}"]`);
+      try {
+        await api('PUT', `/api/reps/${btn.dataset.id}`, {
+          first_name: panel.querySelector('.ed-first').value.trim() || null,
+          last_name: panel.querySelector('.ed-last').value.trim() || null,
+          display_name: panel.querySelector('.ed-display').value.trim() || null,
+          phone: panel.querySelector('.ed-phone').value.trim() || null,
+          email: panel.querySelector('.ed-email').value.trim() || null,
+          pay_type: panel.querySelector('.ed-pay-type').value,
+          weekly_amount: parseFloat(panel.querySelector('.ed-weekly-amount').value) || null,
+          account_info: panel.querySelector('.ed-account-info').value.trim() || null,
+          notes: panel.querySelector('.ed-notes').value.trim() || null
+        });
+        loadReps();
+      } catch (e) { alert(e.message); }
+    });
+  });
 }
 
 document.getElementById('addRepBtn').addEventListener('click', () => {
@@ -106,20 +191,20 @@ document.getElementById('cancelRepBtn').addEventListener('click', () => {
   document.getElementById('addRepCard').style.display = 'none';
 });
 document.getElementById('saveRepBtn').addEventListener('click', async () => {
-  const full_name = document.getElementById('nr_full_name').value.trim();
-  if (!full_name) { alert('Full name is required.'); return; }
+  const first_name = document.getElementById('nr_first_name').value.trim();
+  const last_name = document.getElementById('nr_last_name').value.trim();
+  if (!first_name && !last_name) { alert('First or last name is required.'); return; }
   try {
     await api('POST', '/api/reps', {
-      full_name,
+      first_name: first_name || null,
+      last_name: last_name || null,
       display_name: document.getElementById('nr_display_name').value.trim() || null,
       rep_type: document.getElementById('nr_rep_type').value,
       pay_scale_id: Number(document.getElementById('nr_pay_scale_id').value),
       email: document.getElementById('nr_email').value.trim() || null
     });
     document.getElementById('addRepCard').style.display = 'none';
-    document.getElementById('nr_full_name').value = '';
-    document.getElementById('nr_display_name').value = '';
-    document.getElementById('nr_email').value = '';
+    ['nr_first_name', 'nr_last_name', 'nr_display_name', 'nr_email'].forEach((id) => { document.getElementById(id).value = ''; });
     loadReps();
   } catch (e) { alert(e.message); }
 });

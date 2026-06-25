@@ -18,11 +18,13 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { full_name, staff_type, email, notes } = req.body;
-    if (!full_name || !staff_type) return res.status(400).json({ error: 'full_name and staff_type are required' });
+    const { first_name, last_name, staff_type, email, phone, account_info, notes } = req.body;
+    let full_name = req.body.full_name;
+    if (!full_name && (first_name || last_name)) full_name = [first_name, last_name].filter(Boolean).join(' ');
+    if (!full_name || !staff_type) return res.status(400).json({ error: 'full_name (or first_name/last_name) and staff_type are required' });
     const result = await run(
-      `INSERT INTO payroll_staff (full_name, staff_type, email, notes) VALUES (?, ?, ?, ?)`,
-      [full_name, staff_type, email || null, notes || null]
+      `INSERT INTO payroll_staff (full_name, first_name, last_name, staff_type, email, phone, account_info, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [full_name, first_name || null, last_name || null, staff_type, email || null, phone || null, account_info || null, notes || null]
     );
     res.status(201).json(await get(`SELECT * FROM payroll_staff WHERE id = ?`, [Number(result.lastInsertRowid)]));
   } catch (err) { res.status(400).json({ error: err.message }); }
@@ -32,11 +34,18 @@ router.put('/:id', async (req, res) => {
   try {
     const old = await get(`SELECT * FROM payroll_staff WHERE id = ?`, [req.params.id]);
     if (!old) return res.status(404).json({ error: 'Staff member not found' });
-    const fields = ['full_name', 'staff_type', 'email', 'active', 'notes'].filter((f) => req.body[f] !== undefined);
+    const body = { ...req.body };
+    if ((body.first_name !== undefined || body.last_name !== undefined) && body.full_name === undefined) {
+      const first = body.first_name !== undefined ? body.first_name : old.first_name;
+      const last = body.last_name !== undefined ? body.last_name : old.last_name;
+      body.full_name = [first, last].filter(Boolean).join(' ') || old.full_name;
+    }
+    const fields = ['full_name', 'first_name', 'last_name', 'staff_type', 'email', 'phone', 'account_info', 'active', 'notes']
+      .filter((f) => body[f] !== undefined);
     const setClause = fields.map((f) => `${f} = ?`).join(', ');
-    const values = fields.map((f) => req.body[f]);
+    const values = fields.map((f) => body[f]);
     await run(`UPDATE payroll_staff SET ${setClause} WHERE id = ?`, [...values, req.params.id]);
-    await auditLog.logDiff('payroll_staff', req.params.id, old, req.body, req.user.id);
+    await auditLog.logDiff('payroll_staff', req.params.id, old, body, req.user.id);
     res.json(await get(`SELECT * FROM payroll_staff WHERE id = ?`, [req.params.id]));
   } catch (err) { res.status(400).json({ error: err.message }); }
 });

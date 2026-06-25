@@ -98,6 +98,9 @@ table.data-table tr.deal-row:hover { background: #FAF9FD; }
 .kpi-card.funding .label { color: #2C7A5C; }
 
 .filter-toolbar { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 18px; }
+.filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: stretch; }
+@media (max-width: 700px) { .filter-grid { grid-template-columns: 1fr; } }
+.filter-card { display: flex; flex-direction: column; justify-content: center; margin-bottom: 0; }
 .status-filter-wrap { position: relative; }
 .status-filter-panel {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;

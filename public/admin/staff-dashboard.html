@@ -19,51 +19,59 @@ function kpiCard(label, value, sub) {
   return `<div class="kpi-card"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
 }
 
+function statusBadge(status) {
+  const map = { approved: 'amber', paid: 'green' };
+  return `<span class="badge ${map[status] || 'muted'}">${status}</span>`;
+}
+
+function rowLine(type, r) {
+  if (type === 'owner') {
+    return `<span>${r.customerName}</span><strong>M1 ${fmtMoney(r.m1)} · M2 ${fmtMoney(r.m2)}</strong>`;
+  }
+  if (type === 'pm') {
+    return `<span>${r.customerName} <span style="color:var(--brand-muted); font-size:12px;">Net PPW ${r.netPpw ?? '—'}</span></span><strong>${fmtMoney(r.bonus)}</strong>`;
+  }
+  return `<span>${r.customerName} <span style="color:var(--brand-muted); font-size:12px;">${fmtDate(r.solarDate)} · ${r.kw} kW</span></span><strong>${fmtMoney(r.lineAmount)}</strong>`;
+}
+
 async function load() {
   const d = await api('GET', `/api/dashboard/staff/${staffId}`);
   document.querySelector('.topbar h1').textContent = `${d.staff.full_name}'s Dashboard`;
 
   let kpiHtml = '';
-  let ledgerHtml = '';
   if (d.type === 'owner') {
     kpiHtml = [
       kpiCard('YTD Distributions', fmtMoney(d.kpis.ytdTotal)),
       kpiCard('All-Time', fmtMoney(d.kpis.allTimeTotal)),
-      kpiCard('Deals Counted', d.kpis.dealCount)
+      kpiCard('Pay Runs Counted', d.kpis.payRunCount)
     ].join('');
-    ledgerHtml = d.ledger.map((l) => `
-      <div style="padding:8px 0; border-bottom:1px solid var(--brand-border);">
-        <div style="font-weight:600;">${l.customer_name}</div>
-        <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--brand-muted);">
-          <span>M1: ${fmtMoney(l.m1Amount)} ${l.m1Paid ? '✓ ' + fmtDate(l.m1PaidDate) : '(unpaid)'}</span>
-          <span>M2: ${fmtMoney(l.m2Amount)} ${l.m2Paid ? '✓ ' + fmtDate(l.m2PaidDate) : '(unpaid)'}</span>
-        </div>
-      </div>`).join('');
   } else if (d.type === 'pm') {
     kpiHtml = [
       kpiCard('Weekly Salary', fmtMoney(d.kpis.weeklySalary), 'fixed, every pay cycle'),
-      kpiCard('YTD M2 Bonus', fmtMoney(d.kpis.ytdBonus)),
-      kpiCard('All-Time Bonus', fmtMoney(d.kpis.allTimeBonus), `${d.kpis.bonusCount} deals`)
+      kpiCard('YTD Total', fmtMoney(d.kpis.ytdTotal)),
+      kpiCard('All-Time Total', fmtMoney(d.kpis.allTimeTotal), `${d.kpis.payRunCount} pay runs`)
     ].join('');
-    ledgerHtml = d.ledger.map((l) => `
-      <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--brand-border);">
-        <span>${l.customer_name} <span style="color:var(--brand-muted); font-size:12px;">Net PPW ${l.net_ppw ?? '—'}</span></span>
-        <strong>${fmtMoney(l.joey_m2_bonus)}</strong>
-      </div>`).join('');
   } else {
     kpiHtml = [
-      kpiCard('This Month kW Installed', d.kpis.currentMonthKw),
-      kpiCard('This Month Pay', fmtMoney(d.kpis.currentMonthPay)),
-      kpiCard('Base / Rate', `${fmtMoney(d.kpis.base)} + $${d.kpis.ratePerKw}/kW`)
+      kpiCard('Latest Pay Run', fmtMoney(d.kpis.currentPeriodPay)),
+      kpiCard('Base / Rate', `${fmtMoney(d.kpis.base)} + $${d.kpis.ratePerKw}/kW`),
+      kpiCard('YTD Total', fmtMoney(d.kpis.ytdTotal))
     ].join('');
-    ledgerHtml = d.ledger.map((l) => `
-      <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--brand-border);">
-        <span>${l.month} — ${l.kw} kW installed</span>
-        <strong>${fmtMoney(l.total)}</strong>
-      </div>`).join('');
   }
 
+  const ledgerHtml = d.ledger.map((l) => `
+    <div style="padding:10px 0; border-bottom:1px solid var(--brand-border);">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <strong>${fmtDate(l.payPeriodDate)}</strong>
+        <div>${statusBadge(l.status)} <strong style="margin-left:8px;">${fmtMoney(l.total)}</strong></div>
+      </div>
+      <div style="margin-top:6px;">
+        ${l.rows.map((r) => `<div style="display:flex; justify-content:space-between; font-size:13px; color:var(--brand-muted); padding:2px 0;">${rowLine(d.type, r)}</div>`).join('')}
+      </div>
+    </div>`).join('');
+
   document.getElementById('pageContent').innerHTML = `
+    <p style="color:var(--brand-muted); margin-bottom:16px; font-size:13px;">Sourced from approved Commission Summary pay runs — nothing appears here until Joy approves that pay run.</p>
     <div class="kpi-grid">${kpiHtml}</div>
     <div class="detail-grid">
       <div class="card">
@@ -71,8 +79,8 @@ async function load() {
         <div style="height:240px;"><canvas id="trendChart"></canvas></div>
       </div>
       <div class="card">
-        <p class="section-title">Ledger</p>
-        <div>${ledgerHtml || '<p style="color:var(--brand-muted); font-size:13px;">Nothing yet.</p>'}</div>
+        <p class="section-title">Pay Run History</p>
+        <div>${ledgerHtml || '<p style="color:var(--brand-muted); font-size:13px;">Nothing approved yet.</p>'}</div>
       </div>
     </div>
     <a href="/admin/payroll-staff.html" style="display:inline-block; margin-top:16px;">← Back to Payroll Staff</a>

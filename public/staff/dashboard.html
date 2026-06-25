@@ -13,45 +13,54 @@
 <script>renderStaffShell('/staff/dashboard.html');</script>
 <script src="/shared/charts.js"></script>
 <script>
+function staffStatusBadge(status) {
+  const map = { approved: 'amber', paid: 'green' };
+  return `<span class="badge ${map[status] || 'muted'}">${status}</span>`;
+}
+
+function staffRowLine(type, r) {
+  if (type === 'owner') {
+    return `<span class="lbl">${r.customerName}</span><span class="val">M1 ${fmtMoney(r.m1)} · M2 ${fmtMoney(r.m2)}</span>`;
+  }
+  if (type === 'pm') {
+    return `<span class="lbl">${r.customerName} <span style="color:var(--brand-muted); font-size:11px;">PPW ${r.netPpw ?? '—'}</span></span><span class="val">${fmtMoney(r.bonus)}</span>`;
+  }
+  return `<span class="lbl">${r.customerName} <span style="color:var(--brand-muted); font-size:11px;">${fmtDate(r.solarDate)} · ${r.kw} kW</span></span><span class="val">${fmtMoney(r.lineAmount)}</span>`;
+}
+
 async function load() {
   const d = await api('GET', '/api/mypayroll/dashboard');
   let kpiHtml = '';
-  let ledgerHtml = '';
 
   if (d.type === 'owner') {
     kpiHtml = `
       <div class="kpi-mini"><div class="label">YTD</div><div class="value">${fmtMoney(d.kpis.ytdTotal)}</div></div>
       <div class="kpi-mini"><div class="label">All-Time</div><div class="value">${fmtMoney(d.kpis.allTimeTotal)}</div></div>
-      <div class="kpi-mini" style="grid-column:span 2;"><div class="label">Deals Counted</div><div class="value">${d.kpis.dealCount}</div></div>
+      <div class="kpi-mini" style="grid-column:span 2;"><div class="label">Pay Runs Counted</div><div class="value">${d.kpis.payRunCount}</div></div>
     `;
-    ledgerHtml = d.ledger.map((l) => `
-      <div class="detail-row" style="display:block;">
-        <div style="font-weight:600; margin-bottom:2px;">${l.customer_name}</div>
-        <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--brand-muted);">
-          <span>M1: ${fmtMoney(l.m1Amount)} ${l.m1Paid ? '✓ ' + fmtDate(l.m1PaidDate) : '(unpaid)'}</span>
-          <span>M2: ${fmtMoney(l.m2Amount)} ${l.m2Paid ? '✓ ' + fmtDate(l.m2PaidDate) : '(unpaid)'}</span>
-        </div>
-      </div>
-    `).join('');
   } else if (d.type === 'pm') {
     kpiHtml = `
       <div class="kpi-mini"><div class="label">Weekly Salary</div><div class="value">${fmtMoney(d.kpis.weeklySalary)}</div></div>
-      <div class="kpi-mini"><div class="label">YTD Bonus</div><div class="value">${fmtMoney(d.kpis.ytdBonus)}</div></div>
-      <div class="kpi-mini" style="grid-column:span 2;"><div class="label">All-Time Bonus (${d.kpis.bonusCount} deals)</div><div class="value">${fmtMoney(d.kpis.allTimeBonus)}</div></div>
+      <div class="kpi-mini"><div class="label">YTD Total</div><div class="value">${fmtMoney(d.kpis.ytdTotal)}</div></div>
+      <div class="kpi-mini" style="grid-column:span 2;"><div class="label">All-Time (${d.kpis.payRunCount} pay runs)</div><div class="value">${fmtMoney(d.kpis.allTimeTotal)}</div></div>
     `;
-    ledgerHtml = d.ledger.map((l) => `
-      <div class="detail-row"><span class="lbl">${l.customer_name} <span style="color:var(--brand-muted); font-size:11px;">PPW ${l.net_ppw ?? '—'}</span></span><span class="val">${fmtMoney(l.joey_m2_bonus)}</span></div>
-    `).join('');
   } else {
     kpiHtml = `
-      <div class="kpi-mini"><div class="label">This Month kW</div><div class="value">${d.kpis.currentMonthKw}</div></div>
-      <div class="kpi-mini"><div class="label">This Month Pay</div><div class="value">${fmtMoney(d.kpis.currentMonthPay)}</div></div>
+      <div class="kpi-mini"><div class="label">Latest Pay Run</div><div class="value">${fmtMoney(d.kpis.currentPeriodPay)}</div></div>
+      <div class="kpi-mini"><div class="label">YTD Total</div><div class="value">${fmtMoney(d.kpis.ytdTotal)}</div></div>
       <div class="kpi-mini" style="grid-column:span 2;"><div class="label">Base + Rate</div><div class="value">${fmtMoney(d.kpis.base)} + $${d.kpis.ratePerKw}/kW</div></div>
     `;
-    ledgerHtml = d.ledger.map((l) => `
-      <div class="detail-row"><span class="lbl">${l.month} — ${l.kw} kW</span><span class="val">${fmtMoney(l.total)}</span></div>
-    `).join('');
   }
+
+  const ledgerHtml = d.ledger.map((l) => `
+    <div class="detail-row" style="display:block;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+        <span style="font-weight:600;">${fmtDate(l.payPeriodDate)}</span>
+        <span>${staffStatusBadge(l.status)} <strong style="margin-left:6px;">${fmtMoney(l.total)}</strong></span>
+      </div>
+      ${l.rows.map((r) => `<div style="display:flex; justify-content:space-between; font-size:11px; color:var(--brand-muted); padding:2px 0;">${staffRowLine(d.type, r)}</div>`).join('')}
+    </div>
+  `).join('');
 
   document.getElementById('pageContent').innerHTML = `
     <h2 style="margin:4px 0 14px;">Hey ${d.staff.full_name.split(' ')[0]} 👋</h2>
@@ -61,8 +70,8 @@ async function load() {
       <div style="height:200px;"><canvas id="trendChart"></canvas></div>
     </div>
     <div class="detail-section">
-      <p class="section-title" style="margin-top:0;">Ledger</p>
-      ${ledgerHtml || '<p style="color:var(--brand-muted); font-size:13px;">Nothing yet.</p>'}
+      <p class="section-title" style="margin-top:0;">Pay Run History</p>
+      ${ledgerHtml || '<p style="color:var(--brand-muted); font-size:13px;">Nothing approved yet.</p>'}
     </div>
   `;
   renderTrendChart('trendChart', d.monthlyTrend, { color: '#B6760F' });

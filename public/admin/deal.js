@@ -130,7 +130,7 @@ function renderFull() {
           <div class="field-row cols-3">
             <div><label>Date Signed</label><input type="date" id="f_date_signed"></div>
             <div><label>Install Date</label><input type="date" id="f_install_date"></div>
-            <div><label>Install Completed</label><input type="date" id="f_install_completed_date"></div>
+            <div><label>Solar Date</label><input type="date" id="f_install_completed_date"></div>
           </div>
         </div>
 

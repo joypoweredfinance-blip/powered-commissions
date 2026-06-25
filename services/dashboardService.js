@@ -1,5 +1,7 @@
 const { get, all } = require('../db/client');
-const { calculateAustinPay, round2 } = require('./commissionEngine');
+const { round2, computeEpcCost } = require('./commissionEngine');
+
+const ADDER_CATEGORY_LABELS = { mpu: 'MPU', battery: 'Battery', reroof_sow: 'Roof Work', permit: 'Permit', misc: 'Miscellaneous', other: 'Other' };
 
 function monthKey(dateStr) {
   if (!dateStr) return null;
@@ -124,6 +126,7 @@ async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
 
   const outstandingAdvances = await get(`SELECT COALESCE(SUM(amount - amount_deducted), 0) c FROM advances WHERE status != 'deducted'`);
   const openClawbacks = await get(`SELECT COUNT(*) cnt, COALESCE(SUM(total_clawback), 0) total FROM clawbacks WHERE deducted = 0`);
+  const pendingReferrals = await get(`SELECT COUNT(*) cnt, COALESCE(SUM(amount), 0) total FROM referral_bonuses WHERE date_paid IS NULL`);
 
   // Staff Pay (Etai + Noy + Joey) and Funds Received — attributed by the date each piece
   // actually got marked paid/received, filtered to the selected period (or all-time if none).
@@ -170,9 +173,42 @@ async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
       financierTotals[fname] = (financierTotals[fname] || 0) + r.funds_received_m2;
     }
   }
+  // Zero-amount financiers never get a key in financierTotals in the first place (the loop
+  // above only adds when funds_received_m1/m2 is truthy), so this is already "hide if zero".
   const fundsByFinancier = Object.entries(financierTotals)
     .map(([name, total]) => ({ name, total: round2(total) }))
     .sort((a, b) => b.total - a.total);
+  const fundsByFinancierTotal = round2(fundsByFinancier.reduce((s, f) => s + f.total, 0));
+
+  // "Cut of the pie" breakdown — where each signed contract dollar actually goes: EPC cost,
+  // each adder category, and what's left as POWERED's own margin. Anchored on date_signed
+  // (when the contract value was actually established), filtered by the same status/date
+  // selection as the rest of the dashboard.
+  const pieDeals = await all(`SELECT id, contract_value, epc_rate_per_watt, system_size_kw, date_signed FROM deals d WHERE 1=1 ${statusFilterSql}`);
+  const pieMatchedIds = new Set(pieDeals.filter((d) => !hasPeriod || inRange(d.date_signed, startDate, endDate)).map((d) => d.id));
+  let totalContractValue = 0, totalEpcCost = 0;
+  for (const d of pieDeals) {
+    if (!pieMatchedIds.has(d.id)) continue;
+    totalContractValue += d.contract_value || 0;
+    totalEpcCost += computeEpcCost(d.epc_rate_per_watt, d.system_size_kw || 0);
+  }
+  const adderRows = await all(`SELECT da.category, da.amount, da.deal_id FROM deal_adders da JOIN deals d ON d.id = da.deal_id WHERE 1=1 ${statusFilterSql}`);
+  const categoryTotals = {};
+  for (const a of adderRows) {
+    if (!pieMatchedIds.has(a.deal_id)) continue;
+    categoryTotals[a.category] = (categoryTotals[a.category] || 0) + (a.amount || 0);
+  }
+  const totalAdders = Object.values(categoryTotals).reduce((s, v) => s + v, 0);
+  const totalGross = round2(totalContractValue - totalEpcCost - totalAdders);
+  const contractBreakdown = {
+    totalContractValue: round2(totalContractValue),
+    totalAdders: round2(totalAdders),
+    slices: [
+      { label: 'EPC Cost', amount: round2(totalEpcCost) },
+      ...Object.entries(categoryTotals).map(([cat, amt]) => ({ label: ADDER_CATEGORY_LABELS[cat] || cat, amount: round2(amt) })),
+      { label: 'POWERED Net (Gross)', amount: totalGross }
+    ].filter((s) => s.amount > 0)
+  };
 
   const pipeline = await all(`
     SELECT ds.id, ds.label, ds.phase, ds.sort_order, COUNT(d.id) as count
@@ -263,11 +299,13 @@ async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
       fundsReceived: round2(fundsReceived),
       pendingApproval: round2(pendingApproval),
       outstandingAdvances: round2(outstandingAdvances.c),
-      openClawbackCount: openClawbacks.cnt, openClawbackTotal: round2(openClawbacks.total)
+      openClawbackCount: openClawbacks.cnt, openClawbackTotal: round2(openClawbacks.total),
+      pendingReferralCount: pendingReferrals.cnt, pendingReferralTotal: round2(pendingReferrals.total)
     },
     periodLabel,
     fundingStatus,
-    fundsByFinancier,
+    fundsByFinancier, fundsByFinancierTotal,
+    contractBreakdown,
     chartBreakdown,
     pipeline,
     leaderboard,
@@ -338,87 +376,66 @@ async function getRepDashboard(repId) {
   };
 }
 
+// Required here (not at top) since payRunService doesn't depend on dashboardService —
+// no cycle, just keeping the staff-dashboard-specific require next to its one use.
+const payRunService = require('./payRunService');
+
+// A staff member's dashboard shows exactly what the Commission Summary says they're being
+// paid — sourced from pay runs Joy has approved (or already paid), never live-computed from
+// deal fields directly. This is "the Commission Summary is the final draft" requirement:
+// nothing shows up here until that pay run has been through the approval step.
 async function getStaffDashboard(staffId) {
   const staff = await get(`SELECT * FROM payroll_staff WHERE id = ?`, [staffId]);
   if (!staff) return null;
   const settings = await get(`SELECT * FROM commission_settings WHERE id = 1`);
 
+  const sectionKey = staff.staff_type === 'owner' ? (/etai/i.test(staff.full_name) ? 'etai' : 'noy')
+    : staff.staff_type === 'pm' ? 'joey' : 'austin';
+
+  const approvedRuns = await all(`SELECT id, pay_period_date, status FROM pay_runs WHERE status IN ('approved', 'paid') ORDER BY pay_period_date ASC`);
+  const monthlyTotals = {};
+  lastNMonths(6).forEach((m) => { monthlyTotals[m] = 0; });
+  let ytdTotal = 0, allTimeTotal = 0;
+  const thisYear = String(new Date().getFullYear());
+  const ledger = [];
+
+  for (const run of approvedRuns) {
+    const data = await payRunService.getPayRun(run.id);
+    const section = data.sections[sectionKey];
+    if (!section || !section.total) continue;
+    const mk = monthKey(run.pay_period_date);
+    allTimeTotal += section.total;
+    if (mk && mk.startsWith(thisYear)) ytdTotal += section.total;
+    if (mk in monthlyTotals) monthlyTotals[mk] += section.total;
+    ledger.push({ payRunId: run.id, payPeriodDate: run.pay_period_date, status: run.status, total: section.total, rows: section.rows });
+  }
+  ledger.sort((a, b) => new Date(b.payPeriodDate) - new Date(a.payPeriodDate));
+  const monthlyTrend = lastNMonths(6).map((m) => ({ month: m, total: round2(monthlyTotals[m]) }));
+
   if (staff.staff_type === 'owner') {
-    const isEtai = /etai/i.test(staff.full_name);
-    const prefix = isEtai ? 'owner_etai' : 'owner_noy';
-    const deals = await all(`
-      SELECT id, customer_name,
-             ${prefix}_m1_amount as m1Amount, ${prefix}_m1_paid as m1Paid, ${prefix}_m1_paid_date as m1PaidDate,
-             ${prefix}_m2_amount as m2Amount, ${prefix}_m2_paid as m2Paid, ${prefix}_m2_paid_date as m2PaidDate
-      FROM deals WHERE ${prefix}_m1_amount > 0 OR ${prefix}_m2_amount > 0
-      ORDER BY id DESC
-    `);
-    const monthlyTotals = {};
-    lastNMonths(6).forEach((m) => { monthlyTotals[m] = 0; });
-    let ytdTotal = 0, allTimeTotal = 0;
-    const thisYear = String(new Date().getFullYear());
-    for (const d of deals) {
-      if (d.m1Paid && d.m1PaidDate) {
-        const mk = monthKey(d.m1PaidDate);
-        allTimeTotal += d.m1Amount || 0;
-        if (mk && mk.startsWith(thisYear)) ytdTotal += d.m1Amount || 0;
-        if (mk in monthlyTotals) monthlyTotals[mk] += d.m1Amount || 0;
-      }
-      if (d.m2Paid && d.m2PaidDate) {
-        const mk = monthKey(d.m2PaidDate);
-        allTimeTotal += d.m2Amount || 0;
-        if (mk && mk.startsWith(thisYear)) ytdTotal += d.m2Amount || 0;
-        if (mk in monthlyTotals) monthlyTotals[mk] += d.m2Amount || 0;
-      }
-    }
     return {
       staff, type: 'owner',
-      kpis: { ytdTotal: round2(ytdTotal), allTimeTotal: round2(allTimeTotal), dealCount: deals.length },
-      monthlyTrend: lastNMonths(6).map((m) => ({ month: m, total: round2(monthlyTotals[m]) })),
-      ledger: deals.slice(0, 20)
+      kpis: { ytdTotal: round2(ytdTotal), allTimeTotal: round2(allTimeTotal), payRunCount: ledger.length },
+      monthlyTrend, ledger: ledger.slice(0, 20)
     };
   }
-
   if (staff.staff_type === 'pm') {
-    const deals = await all(`
-      SELECT id, customer_name, m2_approved_date, joey_m2_bonus, joey_paid, net_ppw
-      FROM deals WHERE joey_m2_bonus > 0 ORDER BY m2_approved_date DESC
-    `);
-    let ytdBonus = 0, allTimeBonus = 0;
-    const thisYear = String(new Date().getFullYear());
-    const monthlyTotals = {};
-    lastNMonths(6).forEach((m) => { monthlyTotals[m] = 0; });
-    for (const d of deals) {
-      const mk = monthKey(d.m2_approved_date);
-      allTimeBonus += d.joey_m2_bonus || 0;
-      if (mk && mk.startsWith(thisYear)) ytdBonus += d.joey_m2_bonus || 0;
-      if (mk in monthlyTotals) monthlyTotals[mk] += d.joey_m2_bonus || 0;
-    }
     return {
       staff, type: 'pm',
-      kpis: { weeklySalary: settings.joey_weekly_salary, ytdBonus: round2(ytdBonus), allTimeBonus: round2(allTimeBonus), bonusCount: deals.length },
-      monthlyTrend: lastNMonths(6).map((m) => ({ month: m, total: round2(monthlyTotals[m]) })),
-      ledger: deals.slice(0, 20)
+      kpis: { weeklySalary: settings.joey_weekly_salary, ytdTotal: round2(ytdTotal), allTimeTotal: round2(allTimeTotal), payRunCount: ledger.length },
+      monthlyTrend, ledger: ledger.slice(0, 20)
     };
   }
-
-  // ops (Austin) — company-wide monthly installed kW, not deal-attributed
-  const months = lastNMonths(6);
-  const monthlyPay = [];
-  for (const m of months) {
-    const row = await get(`
-      SELECT COALESCE(SUM(system_size_kw), 0) as kw FROM deals
-      WHERE install_completed_date IS NOT NULL AND strftime('%Y-%m', install_completed_date) = ?
-    `, [m]);
-    const pay = calculateAustinPay({ monthlyInstalledKw: row.kw || 0, settings });
-    monthlyPay.push({ month: m, kw: round2(row.kw || 0), ...pay });
-  }
-  const currentMonth = monthlyPay[monthlyPay.length - 1];
+  // ops (Austin)
+  const currentRun = ledger[0];
   return {
     staff, type: 'ops',
-    kpis: { currentMonthKw: currentMonth.kw, currentMonthPay: currentMonth.total, base: settings.austin_base, ratePerKw: settings.austin_rate_per_kw },
-    monthlyTrend: monthlyPay.map((m) => ({ month: m.month, total: m.total })),
-    ledger: monthlyPay
+    kpis: {
+      currentPeriodPay: currentRun ? currentRun.total : 0,
+      base: settings.austin_base, ratePerKw: settings.austin_rate_per_kw,
+      ytdTotal: round2(ytdTotal), allTimeTotal: round2(allTimeTotal)
+    },
+    monthlyTrend, ledger: ledger.slice(0, 20)
   };
 }
 

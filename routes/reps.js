@@ -19,11 +19,15 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { full_name, display_name, rep_type, email, phone, pay_scale_id, notes } = req.body;
-    if (!full_name) return res.status(400).json({ error: 'full_name is required' });
+    const { first_name, last_name, display_name, rep_type, email, phone, account_info, pay_type, weekly_amount, pay_scale_id, notes } = req.body;
+    let full_name = req.body.full_name;
+    if (!full_name && (first_name || last_name)) full_name = [first_name, last_name].filter(Boolean).join(' ');
+    if (!full_name) return res.status(400).json({ error: 'full_name (or first_name/last_name) is required' });
     const result = await run(
-      `INSERT INTO reps (full_name, display_name, rep_type, email, phone, pay_scale_id, notes) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [full_name, display_name || null, rep_type || 'closer', email || null, phone || null, pay_scale_id || null, notes || null]
+      `INSERT INTO reps (full_name, first_name, last_name, display_name, rep_type, email, phone, account_info, pay_type, weekly_amount, pay_scale_id, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [full_name, first_name || null, last_name || null, display_name || null, rep_type || 'closer', email || null, phone || null,
+       account_info || null, pay_type || 'commission', weekly_amount || null, pay_scale_id || null, notes || null]
     );
     res.status(201).json(await get(`SELECT * FROM reps WHERE id = ?`, [Number(result.lastInsertRowid)]));
   } catch (err) { res.status(400).json({ error: err.message }); }
@@ -33,12 +37,21 @@ router.put('/:id', async (req, res) => {
   try {
     const old = await get(`SELECT * FROM reps WHERE id = ?`, [req.params.id]);
     if (!old) return res.status(404).json({ error: 'Rep not found' });
-    const fields = ['full_name', 'display_name', 'rep_type', 'email', 'phone', 'pay_scale_id', 'active', 'notes']
-      .filter((f) => req.body[f] !== undefined);
+    const body = { ...req.body };
+    // Keep full_name in sync with first/last unless the caller explicitly sent its own
+    // full_name (e.g. a future bulk-import path) — the editable UI only ever sends first/last.
+    if ((body.first_name !== undefined || body.last_name !== undefined) && body.full_name === undefined) {
+      const first = body.first_name !== undefined ? body.first_name : old.first_name;
+      const last = body.last_name !== undefined ? body.last_name : old.last_name;
+      body.full_name = [first, last].filter(Boolean).join(' ') || old.full_name;
+    }
+    const fields = ['full_name', 'first_name', 'last_name', 'display_name', 'rep_type', 'email', 'phone',
+      'account_info', 'pay_type', 'weekly_amount', 'pay_scale_id', 'active', 'notes']
+      .filter((f) => body[f] !== undefined);
     const setClause = fields.map((f) => `${f} = ?`).join(', ');
-    const values = fields.map((f) => req.body[f]);
+    const values = fields.map((f) => body[f]);
     await run(`UPDATE reps SET ${setClause} WHERE id = ?`, [...values, req.params.id]);
-    await auditLog.logDiff('reps', req.params.id, old, req.body, req.user.id);
+    await auditLog.logDiff('reps', req.params.id, old, body, req.user.id);
     res.json(await get(`SELECT * FROM reps WHERE id = ?`, [req.params.id]));
   } catch (err) { res.status(400).json({ error: err.message }); }
 });

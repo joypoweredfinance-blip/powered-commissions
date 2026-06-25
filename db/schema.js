@@ -17,10 +17,15 @@ module.exports = [
   `CREATE TABLE IF NOT EXISTS reps (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     full_name TEXT NOT NULL,
+    first_name TEXT,
+    last_name TEXT,
     display_name TEXT,
     rep_type TEXT NOT NULL DEFAULT 'closer',
     email TEXT,
     phone TEXT,
+    account_info TEXT,
+    pay_type TEXT NOT NULL DEFAULT 'commission',
+    weekly_amount REAL,
     pay_scale_id INTEGER REFERENCES pay_scales(id),
     active INTEGER NOT NULL DEFAULT 1,
     notes TEXT,
@@ -29,8 +34,12 @@ module.exports = [
   `CREATE TABLE IF NOT EXISTS payroll_staff (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     full_name TEXT NOT NULL,
+    first_name TEXT,
+    last_name TEXT,
     staff_type TEXT NOT NULL,
     email TEXT,
+    phone TEXT,
+    account_info TEXT,
     active INTEGER NOT NULL DEFAULT 1,
     notes TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -160,6 +169,8 @@ module.exports = [
     owner_noy_m2_paid_date TEXT,
     joey_paid INTEGER NOT NULL DEFAULT 0,
     joey_paid_date TEXT,
+    austin_paid INTEGER NOT NULL DEFAULT 0,
+    austin_paid_date TEXT,
     closer_breakdown_approved INTEGER NOT NULL DEFAULT 0,
     closer_approved_at TEXT,
     closer_approved_by INTEGER REFERENCES users(id),
@@ -261,12 +272,16 @@ module.exports = [
     include_setter INTEGER NOT NULL DEFAULT 0,
     include_etai INTEGER NOT NULL DEFAULT 0,
     include_noy INTEGER NOT NULL DEFAULT 0,
-    include_joey INTEGER NOT NULL DEFAULT 0
+    include_joey INTEGER NOT NULL DEFAULT 0,
+    include_austin INTEGER NOT NULL DEFAULT 0,
+    austin_kw_override REAL
   )`,
   `CREATE TABLE IF NOT EXISTS pay_run_adhoc (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     pay_run_id INTEGER NOT NULL REFERENCES pay_runs(id),
     recipient_name TEXT NOT NULL,
+    rep_id INTEGER REFERENCES reps(id),
+    staff_id INTEGER REFERENCES payroll_staff(id),
     amount REAL NOT NULL,
     notes TEXT,
     sort_order INTEGER NOT NULL DEFAULT 0

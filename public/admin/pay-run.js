@@ -29,11 +29,13 @@ function render() {
       <p class="section-title">Section 1 · Rep Commissions <span style="font-weight:400; text-transform:none; font-size:12px;">(Closer &amp; Setter pay)</span></p>
       <table class="data-table"><thead><tr><th>Rep</th><th>Customer</th><th>Role</th><th>Net Payable</th><th></th></tr></thead>
       <tbody id="repRows"></tbody></table>
-      <div style="margin-top:10px; display:flex; gap:8px;">
+      <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
         <button class="btn secondary small" id="addRepCandidatesBtn" style="width:auto;">+ Add Deals</button>
+        <button class="btn secondary small" id="addWeeklyRepBtn" style="width:auto;">+ Add Weekly-Pay Rep</button>
         <button class="btn secondary small" id="addAdhocBtn" style="width:auto;">+ Add Flat Pay (e.g. weekly contractor)</button>
       </div>
       <div id="repCandidatesPanel" style="display:none; margin-top:10px;"></div>
+      <div id="weeklyRepPanel" style="display:none; margin-top:10px;"></div>
       <div id="adhocForm" style="display:none; margin-top:10px;"></div>
       <div class="calc-line total" style="margin-top:10px;"><span class="lbl">REP TOTAL</span><span class="val">${fmtMoney(d.sections.rep.total)}</span></div>
     </div>
@@ -64,6 +66,17 @@ function render() {
       <div id="joeyCandidatesPanel" style="display:none; margin-top:10px;"></div>
       <div class="calc-line" style="margin-top:10px;"><span class="lbl">Weekly Salary (Fixed)</span><span class="val">${fmtMoney(d.sections.joey.weeklySalary)}</span></div>
       <div class="calc-line total"><span class="lbl">TOTAL TO JOEY</span><span class="val">${fmtMoney(d.sections.joey.total)}</span></div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <p class="section-title">Section 5 · Austin <span style="font-weight:400; text-transform:none; font-size:12px;">(linked by Solar Date — kW × $${d.sections.austin.ratePerKw}/kW, vs. $${d.sections.austin.base} base)</span></p>
+      <table class="data-table"><thead><tr><th>Customer</th><th>Solar Date</th><th>kW</th><th>kW × Rate</th><th></th></tr></thead>
+      <tbody id="austinRows"></tbody></table>
+      <button class="btn secondary small" id="addAustinCandidatesBtn" style="width:auto; margin-top:10px;">+ Add Jobs</button>
+      <div id="austinCandidatesPanel" style="display:none; margin-top:10px;"></div>
+      <div class="calc-line" style="margin-top:10px;"><span class="lbl">Total kW Linked</span><span class="val">${d.sections.austin.totalKw} kW</span></div>
+      <div class="calc-line"><span class="lbl">Base ($${d.sections.austin.base}) vs. Top-Up</span><span class="val">${fmtMoney(d.sections.austin.topUp)} top-up</span></div>
+      <div class="calc-line total"><span class="lbl">TOTAL TO AUSTIN</span><span class="val">${fmtMoney(d.sections.austin.total)}</span></div>
     </div>
 
     <div class="detail-grid">
@@ -97,6 +110,7 @@ function render() {
   renderOwnerSection('noy', 'noyRows', d.sections.noy.rows);
   renderOwnerSection('etai', 'etaiRows', d.sections.etai.rows);
   renderJoeySection(d.sections.joey.rows);
+  renderAustinSection(d.sections.austin.rows);
 
   document.getElementById('summaryByRecipient').innerHTML = d.summaryByRecipient.length === 0
     ? '<p style="color:var(--brand-muted); font-size:13px;">Nothing included yet.</p>'
@@ -158,6 +172,28 @@ function renderJoeySection(rows) {
         <td>${fmtMoney(r.bonus)} <button class="icon-btn remove-inc" data-deal="${r.dealId}" data-type="joey">✕</button></td>
       </tr>
     `).join('');
+}
+
+function renderAustinSection(rows) {
+  document.getElementById('austinRows').innerHTML = rows.length === 0
+    ? '<tr><td colspan="5" style="text-align:center; color:var(--brand-muted); padding:16px;">Nothing linked yet.</td></tr>'
+    : rows.map((r) => `
+      <tr>
+        <td>${r.customerName}<br><span style="color:var(--brand-muted); font-size:12px;">${r.customerAddress || ''}</span></td>
+        <td>${fmtDate(r.solarDate)}</td>
+        <td><input type="number" step="0.01" class="austin-kw-input" data-deal="${r.dealId}" value="${r.kw}" style="margin:0; max-width:90px;"></td>
+        <td>${fmtMoney(r.lineAmount)}</td>
+        <td><button class="icon-btn remove-inc" data-deal="${r.dealId}" data-type="austin">✕</button></td>
+      </tr>
+    `).join('');
+  document.querySelectorAll('.austin-kw-input').forEach((input) => {
+    input.addEventListener('change', async () => {
+      try {
+        DATA = await api('PUT', `/api/pay-runs/${runId}/deals/${input.dataset.deal}/austin-kw`, { kw: input.value === '' ? null : parseFloat(input.value) });
+        render();
+      } catch (e) { alert(e.message); }
+    });
+  });
 }
 
 function candidatePanelHtml(candidates, type) {
@@ -235,6 +271,45 @@ function wireEvents() {
   togglePanel('addNoyCandidatesBtn', 'noyCandidatesPanel', DATA.candidates.noyCandidates, 'noy');
   togglePanel('addEtaiCandidatesBtn', 'etaiCandidatesPanel', DATA.candidates.etaiCandidates, 'etai');
   togglePanel('addJoeyCandidatesBtn', 'joeyCandidatesPanel', DATA.candidates.joeyCandidates, 'joey');
+  togglePanel('addAustinCandidatesBtn', 'austinCandidatesPanel', DATA.candidates.austinCandidates, 'austin');
+
+  document.getElementById('addWeeklyRepBtn').addEventListener('click', () => {
+    const panel = document.getElementById('weeklyRepPanel');
+    if (panel.style.display === 'none') {
+      const candidates = DATA.candidates.weeklyRepCandidates;
+      panel.innerHTML = candidates.length === 0
+        ? '<p style="color:var(--brand-muted); font-size:13px;">No reps are set to Weekly Pay. Set that on a rep\'s profile under Sales Reps.</p>'
+        : `<div class="card" style="background:var(--brand-bg);">
+            ${candidates.map((c) => {
+              const existing = DATA.adhoc.find((a) => a.rep_id === c.id);
+              return `<div style="display:flex; align-items:center; gap:8px; padding:4px 0;">
+                <input type="checkbox" class="weekly-rep-cb" data-rep="${c.id}" data-name="${c.display_name || c.full_name}" data-amount="${c.weekly_amount || 0}" ${existing ? 'checked' : ''} style="width:auto;">
+                <span style="flex:1;">${c.display_name || c.full_name}</span>
+                <span style="color:var(--brand-muted); font-size:12px;">${fmtMoney(c.weekly_amount)}/wk</span>
+              </div>`;
+            }).join('')}
+            <button class="btn small" id="weeklyRepApplyBtn" style="width:auto; margin-top:8px;">Apply</button>
+          </div>`;
+      panel.style.display = 'block';
+      if (candidates.length) {
+        document.getElementById('weeklyRepApplyBtn').addEventListener('click', async () => {
+          try {
+            for (const cb of panel.querySelectorAll('.weekly-rep-cb')) {
+              const existing = DATA.adhoc.find((a) => a.rep_id === Number(cb.dataset.rep));
+              if (cb.checked && !existing) {
+                DATA = await api('POST', `/api/pay-runs/${runId}/adhoc`, { recipient_name: cb.dataset.name, amount: Number(cb.dataset.amount), rep_id: Number(cb.dataset.rep), notes: 'Weekly Pay' });
+              } else if (!cb.checked && existing) {
+                DATA = await api('DELETE', `/api/pay-runs/${runId}/adhoc/${existing.id}`);
+              }
+            }
+            render();
+          } catch (e) { alert(e.message); }
+        });
+      }
+    } else {
+      panel.style.display = 'none';
+    }
+  });
 
   document.querySelectorAll('.remove-inc').forEach((btn) => {
     btn.addEventListener('click', async () => {
