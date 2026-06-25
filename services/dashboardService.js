@@ -87,7 +87,7 @@ async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
     SELECT d.id, d.closer_rep_id, d.setter_rep_id, d.closer_pay_net, d.setter_pay,
            d.closer_paid, d.closer_paid_date, d.setter_paid, d.setter_paid_date,
            d.closer_breakdown_approved, d.setter_breakdown_approved,
-           d.m1_paid_date, d.net_ppw
+           d.m1_paid_date, d.net_ppw, d.system_size_kw, d.gross_amount, d.rep_pool
     FROM deals d
     WHERE 1=1 ${statusFilterSql}
   `);
@@ -100,9 +100,21 @@ async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
   let commissionsPaid = 0;
   let pendingApproval = 0;
   const repTotals = {};
+  // Averages describe deals actually FUNDED within the selected period (same condition as
+  // fundedCount) — unlike Awaiting M1/M2/Incoming below, these must go to 0/— when nothing
+  // was funded in the period, not fall back to whatever's outstanding "right now".
+  const periodSystemSizes = [], periodNetPpws = [], periodGross = [], periodPoweredNet = [];
 
   for (const d of allDeals) {
-    if (d.m1_paid_date && (!hasPeriod || inRange(d.m1_paid_date, startDate, endDate))) fundedCount++;
+    if (d.m1_paid_date && (!hasPeriod || inRange(d.m1_paid_date, startDate, endDate))) {
+      fundedCount++;
+      if (d.system_size_kw !== null && d.system_size_kw !== undefined) periodSystemSizes.push(d.system_size_kw);
+      if (d.net_ppw !== null && d.net_ppw !== undefined) periodNetPpws.push(d.net_ppw);
+      if (d.gross_amount !== null && d.gross_amount !== undefined) {
+        periodGross.push(d.gross_amount);
+        periodPoweredNet.push(d.gross_amount - (d.rep_pool || 0));
+      }
+    }
     if (d.closer_rep_id && !d.closer_breakdown_approved) pendingApproval += d.closer_pay_net || 0;
     if (d.setter_rep_id && !d.setter_breakdown_approved) pendingApproval += d.setter_pay || 0;
 
@@ -227,14 +239,16 @@ async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
     ORDER BY a.changed_at DESC LIMIT 10
   `);
 
-  // Funding status is a "right now" snapshot (what's currently owed), not affected by the
-  // date filter — only by the status filter, same as before.
+  // Awaiting M1/M2/Incoming are a "right now" snapshot (what's currently owed) — deliberately
+  // not affected by the date filter, only the status filter. The averages below are NOT part
+  // of that snapshot: they describe deals funded within the selected period, so they go to
+  // 0/— when nothing was funded in that period, same as every other period-scoped KPI.
   const awaitingM1Rows = await all(`
-    SELECT id, expected_m1_amount, system_size_kw, net_ppw, gross_amount, rep_pool FROM deals d
+    SELECT id, expected_m1_amount FROM deals d
     WHERE m1_approved_date IS NOT NULL AND funds_received_m1_date IS NULL ${statusFilterSql}
   `);
   const awaitingM2Rows = await all(`
-    SELECT id, expected_m2_amount, system_size_kw, net_ppw, gross_amount, rep_pool FROM deals d
+    SELECT id, expected_m2_amount FROM deals d
     WHERE m2_approved_date IS NOT NULL AND funds_received_m2_date IS NULL ${statusFilterSql}
   `);
   const awaitingM1Total = round2(awaitingM1Rows.reduce((s, r) => s + (r.expected_m1_amount || 0), 0));
@@ -243,24 +257,16 @@ async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
   [...awaitingM1Rows, ...awaitingM2Rows].forEach((r) => unionMap.set(r.id, r));
   const unionDeals = [...unionMap.values()];
 
-  const avgOf = (key) => {
-    const vals = unionDeals.map((d) => d[key]).filter((v) => v !== null && v !== undefined);
-    return vals.length ? round2(vals.reduce((s, v) => s + v, 0) / vals.length) : null;
-  };
-  const avgPoweredNet = (() => {
-    const vals = unionDeals.filter((d) => d.gross_amount !== null && d.gross_amount !== undefined)
-      .map((d) => (d.gross_amount || 0) - (d.rep_pool || 0));
-    return vals.length ? round2(vals.reduce((s, v) => s + v, 0) / vals.length) : null;
-  })();
+  const avgOfPeriod = (vals) => (vals.length ? round2(vals.reduce((s, v) => s + v, 0) / vals.length) : null);
 
   const fundingStatus = {
     awaitingM1: { total: awaitingM1Total, count: awaitingM1Rows.length },
     awaitingM2: { total: awaitingM2Total, count: awaitingM2Rows.length },
     incoming: { total: round2(awaitingM1Total + awaitingM2Total), count: unionDeals.length },
-    avgSystemSizeKw: avgOf('system_size_kw'),
-    avgNetPpw: avgOf('net_ppw'),
-    avgGross: avgOf('gross_amount'),
-    avgPoweredNet
+    avgSystemSizeKw: avgOfPeriod(periodSystemSizes),
+    avgNetPpw: avgOfPeriod(periodNetPpws),
+    avgGross: avgOfPeriod(periodGross),
+    avgPoweredNet: avgOfPeriod(periodPoweredNet)
   };
 
   // Chart: commissions paid vs funds received, bucketed to fit the selected period.

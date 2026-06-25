@@ -43,11 +43,16 @@ async function getStandardScale() {
 }
 
 async function listDeals({ statusId, repId, installerId, search, phase } = {}) {
+  // total_adders is a correlated subquery rather than a second round-trip per deal — the
+  // board needs "Total Deductions (Roof + Adders)" per row, and this keeps the whole list
+  // a single query (libsql/Turso round-trip latency is the real cost here, not the SQL).
   let sql = `
     SELECT d.*, cr.full_name as closer_name, cr.display_name as closer_display,
            sr.full_name as setter_name, sr.display_name as setter_display,
            ds.label as status_label, ds.phase as status_phase, ds.sort_order as status_sort,
-           inst.name as installer_name, fin.name as financier_name
+           inst.name as installer_name, fin.name as financier_name,
+           (SELECT COALESCE(SUM(amount), 0) FROM deal_adders WHERE deal_id = d.id) as total_adders,
+           COALESCE(d.epc_rate_per_watt, 0) * COALESCE(d.system_size_kw, 0) * 1000 as epc_cost
     FROM deals d
     LEFT JOIN reps cr ON cr.id = d.closer_rep_id
     LEFT JOIN reps sr ON sr.id = d.setter_rep_id

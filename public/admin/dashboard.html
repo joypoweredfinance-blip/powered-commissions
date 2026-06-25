@@ -271,7 +271,9 @@ async function load() {
   }
 }
 
-loadStatuses().then(load);
+// load() doesn't read anything loadStatuses() sets up, so run both at once instead of
+// waiting on one before starting the other.
+Promise.all([loadStatuses(), load()]);
 </script>
 </body>
 </html>

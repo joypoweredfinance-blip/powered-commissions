@@ -42,9 +42,13 @@ class LibsqlSessionStore extends session.Store {
     }
   }
 
-  async touch(sid, sessionData, cb) {
-    return this.set(sid, sessionData, cb || (() => {}));
-  }
+  // Deliberately not implemented. With `resave: false`, express-session calls touch() on
+  // every request whose session wasn't otherwise modified — if touch() did a real write (as
+  // it did before), that's a guaranteed extra DB round-trip on every single page load and API
+  // call, app-wide, just to slide the expiry. Leaving it unimplemented means express-session
+  // falls back to resave's "don't write if nothing changed" behavior: sessions now expire a
+  // fixed 7 days from login rather than 7 days from last activity — a fine tradeoff for an
+  // internal tool with a handful of users, in exchange for cutting a write off every request.
 }
 
 module.exports = LibsqlSessionStore;
