@@ -15,19 +15,32 @@
 <script>
 let ALL_STATUSES = [];
 let SELECTED_STATUS_IDS = [];
-let SELECTED_MONTH = '';
+let DATE_RANGE = null; // { startDate, endDate } or null for All Time
 let chartInstance = null;
 
 document.getElementById('pageContent').innerHTML = `
-  <div class="filter-toolbar">
-    <div class="status-filter-wrap">
-      <button class="btn secondary small" id="statusFilterBtn" style="width:auto;">Filter by Status ▾</button>
-      <div class="status-filter-panel" id="statusFilterPanel" style="display:none;"></div>
+  <div class="card" style="margin-bottom:18px;">
+    <div class="filter-toolbar" style="margin-bottom:0;">
+      <div>
+        <div style="font-size:12px; font-weight:700; color:var(--brand-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Filter by Date</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <select id="dateTypeFilter" style="margin:0; max-width:160px;">
+            <option value="all">All Time</option>
+            <option value="year">Year</option>
+            <option value="month">Month</option>
+            <option value="week">Week</option>
+            <option value="range">Custom Range</option>
+          </select>
+          <div id="dateSecondaryControls" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+        </div>
+      </div>
+      <div class="status-filter-wrap">
+        <div style="font-size:12px; font-weight:700; color:var(--brand-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Filter by Status</div>
+        <button class="btn secondary small" id="statusFilterBtn" style="width:auto;">Filter by Status ▾</button>
+        <div class="status-filter-panel" id="statusFilterPanel" style="display:none;"></div>
+      </div>
+      <span id="filterSummary" style="font-size:12px; color:var(--brand-muted); align-self:flex-end; margin-bottom:6px;"></span>
     </div>
-    <select id="monthFilter" style="margin:0; max-width:200px;">
-      <option value="">All Time</option>
-    </select>
-    <span id="filterSummary" style="font-size:12px; color:var(--brand-muted);"></span>
   </div>
 
   <div class="kpi-grid" id="fundingGrid" style="margin-bottom:14px;"></div>
@@ -37,7 +50,7 @@ document.getElementById('pageContent').innerHTML = `
   <div class="detail-grid">
     <div>
       <div class="card" style="margin-bottom:20px;">
-        <p class="section-title" id="trendTitle">Commissions Paid — Last 6 Months</p>
+        <p class="section-title" id="trendTitle">Commissions Paid vs Funds Received</p>
         <div style="height:240px;"><canvas id="trendChart"></canvas></div>
       </div>
       <div class="card">
@@ -66,15 +79,64 @@ function kpiCard(label, value, sub, cls = '') {
   return `<div class="kpi-card ${cls}"><div class="label">${label}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
 }
 
-function lastMonthOptions() {
-  const months = [];
+function pad(n) { return String(n).padStart(2, '0'); }
+function isoDate(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+
+function renderDateSecondaryControls(type) {
+  const el = document.getElementById('dateSecondaryControls');
   const now = new Date();
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    months.push({ value: ym, label: d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) });
+  if (type === 'all') {
+    el.innerHTML = '';
+  } else if (type === 'year') {
+    let opts = '';
+    for (let y = now.getFullYear(); y >= now.getFullYear() - 5; y--) opts += `<option value="${y}">${y}</option>`;
+    el.innerHTML = `<select id="yearPicker" style="margin:0;">${opts}</select>`;
+    document.getElementById('yearPicker').addEventListener('change', applyDateFilter);
+  } else if (type === 'month') {
+    let opts = '';
+    for (let i = 0; i < 24; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      opts += `<option value="${d.getFullYear()}-${pad(d.getMonth() + 1)}">${d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</option>`;
+    }
+    el.innerHTML = `<select id="monthPicker" style="margin:0;">${opts}</select>`;
+    document.getElementById('monthPicker').addEventListener('change', applyDateFilter);
+  } else if (type === 'week') {
+    el.innerHTML = `<input type="date" id="weekPicker" value="${isoDate(now)}" style="margin:0;"><span style="font-size:12px; color:var(--brand-muted); align-self:center;">pick any day in the week</span>`;
+    document.getElementById('weekPicker').addEventListener('change', applyDateFilter);
+  } else if (type === 'range') {
+    const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
+    el.innerHTML = `
+      <input type="date" id="rangeStart" value="${isoDate(weekAgo)}" style="margin:0;">
+      <span style="align-self:center; color:var(--brand-muted);">to</span>
+      <input type="date" id="rangeEnd" value="${isoDate(now)}" style="margin:0;">
+      <button class="btn small" id="rangeApply" style="width:auto;">Apply</button>
+    `;
+    document.getElementById('rangeApply').addEventListener('click', applyDateFilter);
   }
-  return months;
+}
+
+function applyDateFilter() {
+  const type = document.getElementById('dateTypeFilter').value;
+  if (type === 'all') {
+    DATE_RANGE = null;
+  } else if (type === 'year') {
+    const y = document.getElementById('yearPicker').value;
+    DATE_RANGE = { startDate: `${y}-01-01`, endDate: `${y}-12-31` };
+  } else if (type === 'month') {
+    const ym = document.getElementById('monthPicker').value;
+    const [y, m] = ym.split('-').map(Number);
+    const lastDay = new Date(y, m, 0).getDate();
+    DATE_RANGE = { startDate: `${ym}-01`, endDate: `${ym}-${pad(lastDay)}` };
+  } else if (type === 'week') {
+    const anchor = new Date(document.getElementById('weekPicker').value + 'T00:00:00');
+    const dow = anchor.getDay(); // 0=Sun
+    const monday = new Date(anchor); monday.setDate(anchor.getDate() - ((dow + 6) % 7));
+    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+    DATE_RANGE = { startDate: isoDate(monday), endDate: isoDate(sunday) };
+  } else if (type === 'range') {
+    DATE_RANGE = { startDate: document.getElementById('rangeStart').value, endDate: document.getElementById('rangeEnd').value };
+  }
+  load();
 }
 
 async function loadStatuses() {
@@ -90,9 +152,11 @@ async function loadStatuses() {
       <button class="btn small" id="statusApply" style="width:auto; margin-left:auto;">Apply</button>
     </div>
   `;
-  const monthSelect = document.getElementById('monthFilter');
-  lastMonthOptions().forEach((m) => monthSelect.insertAdjacentHTML('beforeend', `<option value="${m.value}">${m.label}</option>`));
 
+  document.getElementById('dateTypeFilter').addEventListener('change', (e) => {
+    renderDateSecondaryControls(e.target.value);
+    applyDateFilter();
+  });
   document.getElementById('statusFilterBtn').addEventListener('click', () => {
     const panel = document.getElementById('statusFilterPanel');
     panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
@@ -108,10 +172,6 @@ async function loadStatuses() {
     document.getElementById('statusFilterPanel').style.display = 'none';
     load();
   });
-  document.getElementById('monthFilter').addEventListener('change', (e) => {
-    SELECTED_MONTH = e.target.value;
-    load();
-  });
   document.addEventListener('click', (e) => {
     const wrap = document.querySelector('.status-filter-wrap');
     if (wrap && !wrap.contains(e.target)) document.getElementById('statusFilterPanel').style.display = 'none';
@@ -121,7 +181,10 @@ async function loadStatuses() {
 async function load() {
   const params = new URLSearchParams();
   SELECTED_STATUS_IDS.forEach((id) => params.append('statusIds', id));
-  if (SELECTED_MONTH) params.set('month', SELECTED_MONTH);
+  if (DATE_RANGE) {
+    params.set('startDate', DATE_RANGE.startDate);
+    params.set('endDate', DATE_RANGE.endDate);
+  }
 
   const summary = [];
   if (SELECTED_STATUS_IDS.length) summary.push(`${SELECTED_STATUS_IDS.length} status${SELECTED_STATUS_IDS.length > 1 ? 'es' : ''} selected`);
@@ -132,9 +195,9 @@ async function load() {
   const f = d.fundingStatus;
 
   document.getElementById('fundingGrid').innerHTML = [
-    kpiCard('Incoming (Awaiting Funding)', fmtMoney(f.incoming.total), `${f.incoming.count} deals`, 'funding'),
-    kpiCard('Awaiting M1', fmtMoney(f.awaitingM1.total), `${f.awaitingM1.count} deals`, 'funding'),
-    kpiCard('Awaiting M2', fmtMoney(f.awaitingM2.total), `${f.awaitingM2.count} deals`, 'funding')
+    kpiCard('Incoming (Awaiting Funding)', fmtMoney(f.incoming.total), `${f.incoming.count} deals — right now`, 'funding'),
+    kpiCard('Awaiting M1', fmtMoney(f.awaitingM1.total), `${f.awaitingM1.count} deals — right now`, 'funding'),
+    kpiCard('Awaiting M2', fmtMoney(f.awaitingM2.total), `${f.awaitingM2.count} deals — right now`, 'funding')
   ].join('');
   document.getElementById('avgGrid').innerHTML = [
     kpiCard('Avg System Size', f.avgSystemSizeKw !== null ? f.avgSystemSizeKw + ' kW' : '—'),
@@ -145,10 +208,10 @@ async function load() {
 
   document.getElementById('kpiGrid').innerHTML = [
     kpiCard('Active Deals', k.activeDeals, `${k.totalDeals} total all-time`),
-    kpiCard('Funded This Month', k.fundedThisMonth, `${k.fundedYTD} YTD`),
-    kpiCard('Commissions Paid', fmtMoney(k.paidThisMonth), `${fmtMoney(k.paidYTD)} YTD`),
-    kpiCard('Funds Received', fmtMoney(k.fundsReceivedThisMonth), `${fmtMoney(k.fundsReceivedYTD)} YTD`),
-    kpiCard('Staff Pay (Etai + Noy + Joey)', fmtMoney(k.staffPayThisMonth), `${fmtMoney(k.staffPayYTD)} YTD`),
+    kpiCard('Funded', k.fundedCount, d.periodLabel),
+    kpiCard('Commissions Paid', fmtMoney(k.commissionsPaid), d.periodLabel),
+    kpiCard('Funds Received', fmtMoney(k.fundsReceived), d.periodLabel),
+    kpiCard('Staff Pay (Etai + Noy + Joey)', fmtMoney(k.staffPay), d.periodLabel),
     kpiCard('Pending Approval', fmtMoney(k.pendingApproval), 'not yet visible to reps'),
     kpiCard('Outstanding Advances', fmtMoney(k.outstandingAdvances)),
     kpiCard('Open Clawbacks', k.openClawbackCount, fmtMoney(k.openClawbackTotal))
@@ -164,13 +227,8 @@ async function load() {
     `).join('');
 
   if (chartInstance) chartInstance.destroy();
-  if (d.weeklyBreakdown) {
-    document.getElementById('trendTitle').textContent = `Weekly: Commissions Paid vs Funds Received — ${SELECTED_MONTH}`;
-    chartInstance = renderWeeklyComparisonChart('trendChart', d.weeklyBreakdown);
-  } else {
-    document.getElementById('trendTitle').textContent = 'Commissions Paid — Last 6 Months';
-    chartInstance = renderTrendChart('trendChart', d.monthlyTrend, { color: '#6B3FD4', label: 'Commissions Paid' });
-  }
+  document.getElementById('trendTitle').textContent = `Commissions Paid vs Funds Received — ${d.periodLabel}`;
+  chartInstance = renderWeeklyComparisonChart('trendChart', d.chartBreakdown);
   renderFunnelChart('funnelChart', d.pipeline);
 
   document.getElementById('leaderboard').innerHTML = d.leaderboard.length === 0
