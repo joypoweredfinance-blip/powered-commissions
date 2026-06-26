@@ -52,7 +52,10 @@ const COLUMN_MIGRATIONS = [
   { table: 'deals', column: 'joey_m1_bonus', definition: 'REAL' },
   { table: 'deals', column: 'joey_m1_paid', definition: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'deals', column: 'joey_m1_paid_date', definition: 'TEXT' },
-  { table: 'deals', column: 'original_estimate_amount', definition: 'REAL' }
+  { table: 'deals', column: 'original_estimate_amount', definition: 'REAL' },
+  { table: 'deals', column: 'advance_deduction', definition: 'REAL' },
+  { table: 'deals', column: 'deduction_other', definition: 'REAL' },
+  { table: 'deal_estimate_files', column: 'slot', definition: "TEXT NOT NULL DEFAULT 'estimate'" }
 ];
 
 async function columnExists(table, column) {

@@ -162,6 +162,10 @@ module.exports = [
     -- Purely a reference number Joy can compare against the live calculator — never read by
     -- recalculate() or any other formula, by design.
     original_estimate_amount REAL,
+    -- Plain manual deductions, same treatment as cashback_amount — feed into the Calculator's
+    -- Total display but are never computed or locked, always Joy's own entry.
+    advance_deduction REAL,
+    deduction_other REAL,
     below_floor INTEGER NOT NULL DEFAULT 0,
     closer_paid INTEGER NOT NULL DEFAULT 0,
     closer_paid_date TEXT,
@@ -214,6 +218,8 @@ module.exports = [
   `CREATE TABLE IF NOT EXISTS deal_estimate_files (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     deal_id INTEGER NOT NULL REFERENCES deals(id),
+    -- 'estimate' or 'final' — one file per deal per slot, replacing whichever was there before.
+    slot TEXT NOT NULL DEFAULT 'estimate',
     file_name TEXT NOT NULL,
     file_type TEXT,
     file_size INTEGER NOT NULL,

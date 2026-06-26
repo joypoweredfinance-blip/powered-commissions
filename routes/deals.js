@@ -133,8 +133,9 @@ router.post('/:id/override', async (req, res) => {
   }
 });
 
-// Any format, as requested — one file per deal (uploading a new one replaces the old).
-router.post('/:id/original-estimate-file', (req, res) => {
+// Any format, as requested — slot is "estimate" or "final", one file per slot per deal
+// (uploading a new one into the same slot replaces what was there before).
+router.post('/:id/files/:slot', (req, res) => {
   upload.single('file')(req, res, async (err) => {
     if (err) {
       const msg = err.code === 'LIMIT_FILE_SIZE' ? 'File is too large — max 10MB.' : err.message;
@@ -142,7 +143,7 @@ router.post('/:id/original-estimate-file', (req, res) => {
     }
     if (!req.file) return res.status(400).json({ error: 'No file was uploaded.' });
     try {
-      const deal = await dealService.setOriginalEstimateFile(req.params.id, {
+      const deal = await dealService.setEstimateFile(req.params.id, req.params.slot, {
         fileName: req.file.originalname, fileType: req.file.mimetype, fileSize: req.file.size, fileData: req.file.buffer
       }, req.user.id);
       res.status(201).json(deal);
@@ -150,9 +151,9 @@ router.post('/:id/original-estimate-file', (req, res) => {
   });
 });
 
-router.get('/:id/original-estimate-file', async (req, res) => {
+router.get('/:id/files/:slot', async (req, res) => {
   try {
-    const file = await dealService.getOriginalEstimateFileBlob(req.params.id);
+    const file = await dealService.getEstimateFileBlob(req.params.id, req.params.slot);
     if (!file) return res.status(404).json({ error: 'No file attached.' });
     res.setHeader('Content-Type', file.file_type || 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.file_name)}"`);
@@ -162,9 +163,9 @@ router.get('/:id/original-estimate-file', async (req, res) => {
   }
 });
 
-router.delete('/:id/original-estimate-file', async (req, res) => {
+router.delete('/:id/files/:slot', async (req, res) => {
   try {
-    const deal = await dealService.deleteOriginalEstimateFile(req.params.id, req.user.id);
+    const deal = await dealService.deleteEstimateFile(req.params.id, req.params.slot, req.user.id);
     res.json(deal);
   } catch (err) {
     res.status(400).json({ error: err.message });

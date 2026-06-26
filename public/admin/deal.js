@@ -244,7 +244,14 @@ function renderFull() {
               <input type="number" step="0.01" id="f_original_estimate_amount" style="margin:0;">
               <button class="btn secondary small" id="saveOriginalEstimateBtn" style="width:auto;">Save</button>
             </div>
-            <div id="originalEstimateFileBox" style="margin-top:10px;"></div>
+            <div style="margin-top:12px;">
+              <label style="font-size:12px;">1 — Estimate</label>
+              <div id="fileBox_estimate"></div>
+            </div>
+            <div style="margin-top:12px;">
+              <label style="font-size:12px;">2 — Final</label>
+              <div id="fileBox_final"></div>
+            </div>
           </div>
         </div>
 
@@ -382,6 +389,33 @@ function calcRow(label, value, opts = {}) {
   return `<div class="${cls}"><span class="lbl">${label}</span><span class="val">${value}</span></div>`;
 }
 
+// Plain manual deductions (same treatment as cashback_amount) — editable right where they're
+// used, since seeing the Total respond immediately is the point.
+function calcEditableRow(label, value, fieldName) {
+  return `
+    <div class="calc-line">
+      <span class="lbl">${label}</span>
+      <span class="val" style="display:flex; align-items:center; gap:6px; font-weight:400;">
+        <input type="number" step="0.01" class="calc-amount-input" data-field="${fieldName}" value="${value ?? ''}" style="margin:0; max-width:100px; padding:4px 8px; font-weight:700;">
+        <button class="btn secondary small calc-amount-save" data-field="${fieldName}" style="width:auto; padding:4px 10px;">Save</button>
+      </span>
+    </div>
+  `;
+}
+
+function wireCalcAmountSaveButtons() {
+  document.querySelectorAll('.calc-amount-save').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const field = btn.dataset.field;
+      const input = document.querySelector(`.calc-amount-input[data-field="${field}"]`);
+      try {
+        DEAL = await api('PUT', `/api/deals/${dealId}`, { [field]: numOrNull(input.value) });
+        renderCalc();
+      } catch (e) { alert(e.message); }
+    });
+  });
+}
+
 function renderCalc() {
   const d = DEAL;
   let html = '';
@@ -397,9 +431,15 @@ function renderCalc() {
   html += calcRow('Cashback Deduction', d.cashback_amount ? `−${fmtMoney(d.cashback_amount * 0.5)}` : '$0.00');
   html += calcRow('Closer Pay (net)', fmtMoney(d.closer_pay_net), { total: true });
   if (d.setter_rep_id) html += calcRow('Setter Pay', fmtMoney(d.setter_pay), { total: true });
+  html += calcEditableRow('Advance Deduction', d.advance_deduction, 'advance_deduction');
+  html += calcEditableRow('Deduction (Other)', d.deduction_other, 'deduction_other');
+  const total = round2(
+    (d.closer_pay_net || 0) + (d.setter_rep_id ? (d.setter_pay || 0) : 0) - (d.advance_deduction || 0) - (d.deduction_other || 0)
+  );
+  html += calcRow('Total', fmtMoney(total), { total: true });
   // Only fields this Calculator actually shows — so an override saved elsewhere (e.g. Joey's
   // Bonus in Payment Status) never shows its reason here, and vice versa.
-  const CALC_FIELDS = ['net_ppw', 'pay_scale_rate', 'rep_pool', 'closer_pay_gross', 'closer_pay_net', 'setter_pay'];
+  const CALC_FIELDS = ['net_ppw', 'pay_scale_rate', 'rep_pool', 'closer_pay_gross', 'closer_pay_net', 'setter_pay', 'gross_amount'];
   let lockedCalcFields = [];
   try { lockedCalcFields = JSON.parse(d.overridden_fields || '[]').filter((f) => CALC_FIELDS.includes(f)); } catch (e) { /* ignore */ }
   if (lockedCalcFields.length) {
@@ -409,6 +449,7 @@ function renderCalc() {
   }
   document.getElementById('calcLines').innerHTML = html;
   document.getElementById('overrideBtn').textContent = d.manual_override ? 'Edit Override' : 'Manual Override';
+  wireCalcAmountSaveButtons();
   renderFundsReceived();
 }
 
@@ -484,29 +525,56 @@ function fmtFileSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// Self-contained: the Save/Upload/Remove actions here only ever re-render this one box, never
-// the rest of the page — this field is purely a reference number + attachment with no bearing
-// on any calculation, so nothing else should ever need to refresh because of it.
-function renderOriginalEstimate() {
-  const f = DEAL.originalEstimateFile;
-  document.getElementById('originalEstimateFileBox').innerHTML = f
+// Self-contained per slot: the Save/Upload/Remove actions here only ever re-render this one
+// box, never the rest of the page — these are purely reference attachments with no bearing on
+// any calculation, so nothing else should ever need to refresh because of them.
+function renderEstimateFileSlot(slot) {
+  const f = DEAL.estimateFiles ? DEAL.estimateFiles[slot] : null;
+  const box = document.getElementById(`fileBox_${slot}`);
+  box.innerHTML = f
     ? `
       <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; background:var(--brand-bg); border-radius:8px;">
         <div style="font-size:13px;">
-          📎 <a href="/api/deals/${dealId}/original-estimate-file" target="_blank" rel="noopener">${f.file_name}</a>
+          📎 <a href="/api/deals/${dealId}/files/${slot}" target="_blank" rel="noopener">${f.file_name}</a>
           <span style="color:var(--brand-muted);">(${fmtFileSize(f.file_size)} · uploaded ${fmtDate(f.uploaded_at)})</span>
         </div>
-        <button class="icon-btn" id="removeEstimateFileBtn" title="Remove">✕</button>
+        <button class="icon-btn remove-file-btn" data-slot="${slot}" title="Remove">✕</button>
       </div>
     `
     : `<p style="color:var(--brand-muted); font-size:12px; margin:0;">No file attached yet.</p>`;
-  document.getElementById('originalEstimateFileBox').insertAdjacentHTML('beforeend', `
+  box.insertAdjacentHTML('beforeend', `
     <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
-      <input type="file" id="originalEstimateFileInput" style="margin:0; font-size:12px;">
-      <button class="btn secondary small" id="uploadEstimateFileBtn" style="width:auto;">${f ? 'Replace File' : 'Attach File'}</button>
+      <input type="file" class="estimate-file-input" data-slot="${slot}" style="margin:0; font-size:12px;">
+      <button class="btn secondary small upload-file-btn" data-slot="${slot}" style="width:auto;">${f ? 'Replace File' : 'Attach File'}</button>
     </div>
   `);
 
+  box.querySelector('.upload-file-btn').addEventListener('click', async () => {
+    const input = box.querySelector('.estimate-file-input');
+    const file = input.files[0];
+    if (!file) { alert('Choose a file first.'); return; }
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await fetch(`/api/deals/${dealId}/files/${slot}`, { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      DEAL = data;
+      renderEstimateFileSlot(slot);
+    } catch (err) { alert(err.message); }
+  });
+
+  const removeBtn = box.querySelector('.remove-file-btn');
+  if (removeBtn) removeBtn.addEventListener('click', async () => {
+    if (!confirm('Remove this attached file?')) return;
+    try {
+      DEAL = await api('DELETE', `/api/deals/${dealId}/files/${slot}`);
+      renderEstimateFileSlot(slot);
+    } catch (err) { alert(err.message); }
+  });
+}
+
+function renderOriginalEstimate() {
   document.getElementById('saveOriginalEstimateBtn').addEventListener('click', async (e) => {
     const btn = e.target;
     btn.disabled = true;
@@ -516,30 +584,8 @@ function renderOriginalEstimate() {
       setTimeout(() => { if (document.body.contains(btn)) { btn.textContent = 'Save'; btn.disabled = false; } }, 1200);
     } catch (err) { alert(err.message); btn.disabled = false; }
   });
-
-  document.getElementById('uploadEstimateFileBtn').addEventListener('click', async () => {
-    const input = document.getElementById('originalEstimateFileInput');
-    const file = input.files[0];
-    if (!file) { alert('Choose a file first.'); return; }
-    const formData = new FormData();
-    formData.append('file', file);
-    try {
-      const res = await fetch(`/api/deals/${dealId}/original-estimate-file`, { method: 'POST', body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Upload failed');
-      DEAL = data;
-      renderOriginalEstimate();
-    } catch (err) { alert(err.message); }
-  });
-
-  const removeBtn = document.getElementById('removeEstimateFileBtn');
-  if (removeBtn) removeBtn.addEventListener('click', async () => {
-    if (!confirm('Remove this attached file?')) return;
-    try {
-      DEAL = await api('DELETE', `/api/deals/${dealId}/original-estimate-file`);
-      renderOriginalEstimate();
-    } catch (err) { alert(err.message); }
-  });
+  renderEstimateFileSlot('estimate');
+  renderEstimateFileSlot('final');
 }
 
 function renderApproval() {
@@ -743,12 +789,18 @@ function wireEvents() {
     box.innerHTML = `
       <p style="font-size:12px; color:var(--brand-muted); margin-top:0;">
         Every field here is optional — leave blank to keep it as-is. Typing a Pay Scale Rate auto-fills
-        Closer/Setter Pay below (still editable afterward).
+        Rep Pool / Closer Pay (gross) / Closer Pay (net) / Setter Pay below (still editable afterward).
       </p>
       <label>Net PPW <span style="color:var(--brand-muted); font-weight:400;">(current: ${d.net_ppw ?? '—'})</span></label>
       <input type="number" step="0.0001" id="ov_net_ppw" placeholder="leave blank to keep current">
+      <label>Gross <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.gross_amount)})</span></label>
+      <input type="number" step="0.01" id="ov_gross_amount" placeholder="leave blank to keep current">
       <label>Pay Scale Rate ($/kW) <span style="color:var(--brand-muted); font-weight:400;">(current: ${d.pay_scale_rate ?? '—'})</span></label>
       <input type="number" step="0.01" id="ov_pay_scale_rate" placeholder="leave blank to keep current">
+      <label>Rep Pool <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.rep_pool)})</span></label>
+      <input type="number" step="0.01" id="ov_rep_pool" placeholder="leave blank to keep current">
+      <label>Closer Pay (gross) <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.closer_pay_gross)})</span></label>
+      <input type="number" step="0.01" id="ov_closer_pay_gross" placeholder="leave blank to keep current">
       <label>Closer Pay (net) <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.closer_pay_net)})</span></label>
       <input type="number" step="0.01" id="ov_closer_pay_net" placeholder="leave blank to keep current">
       <label>Setter Pay <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.setter_pay)})</span></label>
@@ -759,13 +811,14 @@ function wireEvents() {
         ${d.manual_override ? '<button class="btn secondary small" id="clearOverrideBtn" style="width:auto;">Turn Off &amp; Recalculate</button>' : ''}
       </div>
     `;
-    // Once Joy types into Closer/Setter Pay herself, a later tweak to Pay Scale Rate (fixing a
-    // typo, say) should never silently overwrite what she just typed — auto-fill only ever
-    // applies to a field she hasn't manually touched yet.
-    let closerPayEditedByUser = false;
-    let setterPayEditedByUser = false;
-    document.getElementById('ov_closer_pay_net').addEventListener('input', () => { closerPayEditedByUser = true; });
-    document.getElementById('ov_setter_pay').addEventListener('input', () => { setterPayEditedByUser = true; });
+    // Once Joy types into one of these herself, a later tweak to Pay Scale Rate (fixing a typo,
+    // say) should never silently overwrite what she just typed — auto-fill only ever applies to
+    // a field she hasn't manually touched yet.
+    const userEdited = { rep_pool: false, closer_pay_gross: false, closer_pay_net: false, setter_pay: false };
+    ['ov_rep_pool', 'ov_closer_pay_gross', 'ov_closer_pay_net', 'ov_setter_pay'].forEach((inputId) => {
+      const field = inputId.slice(3);
+      document.getElementById(inputId).addEventListener('input', () => { userEdited[field] = true; });
+    });
     document.getElementById('ov_pay_scale_rate').addEventListener('input', (e) => {
       const rate = parseFloat(e.target.value);
       if (isNaN(rate) || !SETTINGS) return;
@@ -774,11 +827,13 @@ function wireEvents() {
       const pool = rate * kw * paySplit;
       const hasSetter = !!DEAL.setter_rep_id;
       const setterPay = hasSetter ? pool * SETTINGS.setter_split_pct : 0;
-      const closerPayPre = hasSetter ? pool * SETTINGS.closer_split_pct : pool;
+      const closerPayGross = hasSetter ? pool * SETTINGS.closer_split_pct : pool;
       const cashbackDeduction = (DEAL.cashback_amount || 0) * SETTINGS.cashback_split_pct;
-      const closerNet = closerPayPre - cashbackDeduction;
-      if (!closerPayEditedByUser) document.getElementById('ov_closer_pay_net').value = round2(closerNet);
-      if (!setterPayEditedByUser) document.getElementById('ov_setter_pay').value = round2(setterPay);
+      const closerNet = closerPayGross - cashbackDeduction;
+      if (!userEdited.rep_pool) document.getElementById('ov_rep_pool').value = round2(pool);
+      if (!userEdited.closer_pay_gross) document.getElementById('ov_closer_pay_gross').value = round2(closerPayGross);
+      if (!userEdited.closer_pay_net) document.getElementById('ov_closer_pay_net').value = round2(closerNet);
+      if (!userEdited.setter_pay) document.getElementById('ov_setter_pay').value = round2(setterPay);
     });
     document.getElementById('saveOverrideBtn').addEventListener('click', async () => {
       const reason = val('ov_reason');
@@ -789,7 +844,10 @@ function wireEvents() {
           reason,
           fields: {
             net_ppw: floatval('ov_net_ppw'),
+            gross_amount: floatval('ov_gross_amount'),
             pay_scale_rate: floatval('ov_pay_scale_rate'),
+            rep_pool: floatval('ov_rep_pool'),
+            closer_pay_gross: floatval('ov_closer_pay_gross'),
             closer_pay_net: floatval('ov_closer_pay_net'),
             setter_pay: floatval('ov_setter_pay')
           }

@@ -19,7 +19,10 @@ const EDITABLE_FIELDS = [
   'funding_status', 'funding_status_override',
   // A reference number only — deliberately not in COMPUTED_FIELDS, never touched by
   // recalculate() or any override logic, so it can never affect another figure on the deal.
-  'original_estimate_amount'
+  'original_estimate_amount',
+  // Same treatment as cashback_amount — a plain manual figure, not a locked override. Feeds
+  // into the Commission Calculator's Total display only, computed client-side.
+  'advance_deduction', 'deduction_other'
 ];
 
 const COMPUTED_FIELDS = [
@@ -117,12 +120,17 @@ async function getDeal(id) {
   const auditLogEntries = await auditLog.getLogFor('deals', id);
   // Metadata only — file_data (the actual bytes) is deliberately excluded here and only ever
   // fetched by the dedicated download route, so attaching a large file never slows down every
-  // load of this deal (or, on listDeals, every deal on the whole Board).
-  const estimateFile = await get(
-    `SELECT id, file_name, file_type, file_size, uploaded_at FROM deal_estimate_files WHERE deal_id = ? ORDER BY id DESC LIMIT 1`,
+  // load of this deal (or, on listDeals, every deal on the whole Board). At most one row per
+  // slot, so this is at most 2 rows total.
+  const fileRows = await all(
+    `SELECT slot, id, file_name, file_type, file_size, uploaded_at FROM deal_estimate_files WHERE deal_id = ?`,
     [id]
   );
-  return { ...deal, adders, advances, clawbacks, auditLog: auditLogEntries, originalEstimateFile: estimateFile || null };
+  const files = { estimate: null, final: null };
+  for (const row of fileRows) {
+    if (row.slot === 'estimate' || row.slot === 'final') files[row.slot] = row;
+  }
+  return { ...deal, adders, advances, clawbacks, auditLog: auditLogEntries, estimateFiles: files };
 }
 
 async function createDeal(data, userId) {
@@ -386,26 +394,31 @@ async function deleteDeal(id, userId) {
   await run(`DELETE FROM deals WHERE id = ?`, [id]);
 }
 
-// Replaces whatever was there before — one file per deal, matching "the job's originally
-// estimated commission" as a single reference document, not a growing attachment list.
-async function setOriginalEstimateFile(dealId, { fileName, fileType, fileSize, fileData }, userId) {
-  await run(`DELETE FROM deal_estimate_files WHERE deal_id = ?`, [dealId]);
+const FILE_SLOTS = ['estimate', 'final'];
+
+// Replaces whatever was in that SAME slot before — one file per slot per deal (Estimate and
+// Final each hold their own single reference document, not a growing attachment list).
+async function setEstimateFile(dealId, slot, { fileName, fileType, fileSize, fileData }, userId) {
+  if (!FILE_SLOTS.includes(slot)) throw new Error('slot must be "estimate" or "final"');
+  await run(`DELETE FROM deal_estimate_files WHERE deal_id = ? AND slot = ?`, [dealId, slot]);
   await run(
-    `INSERT INTO deal_estimate_files (deal_id, file_name, file_type, file_size, file_data, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)`,
-    [dealId, fileName, fileType || null, fileSize, fileData, userId]
+    `INSERT INTO deal_estimate_files (deal_id, slot, file_name, file_type, file_size, file_data, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [dealId, slot, fileName, fileType || null, fileSize, fileData, userId]
   );
-  await auditLog.logChange('deals', dealId, 'original_estimate_file', null, fileName, userId, 'Original estimate file uploaded');
+  await auditLog.logChange('deals', dealId, `${slot}_file`, null, fileName, userId, `${slot === 'final' ? 'Final' : 'Estimate'} file uploaded`);
   return getDeal(dealId);
 }
 
 // The only place file_data is actually read — kept separate from getDeal() on purpose.
-async function getOriginalEstimateFileBlob(dealId) {
-  return get(`SELECT file_name, file_type, file_data FROM deal_estimate_files WHERE deal_id = ? ORDER BY id DESC LIMIT 1`, [dealId]);
+async function getEstimateFileBlob(dealId, slot) {
+  if (!FILE_SLOTS.includes(slot)) throw new Error('slot must be "estimate" or "final"');
+  return get(`SELECT file_name, file_type, file_data FROM deal_estimate_files WHERE deal_id = ? AND slot = ?`, [dealId, slot]);
 }
 
-async function deleteOriginalEstimateFile(dealId, userId) {
-  await run(`DELETE FROM deal_estimate_files WHERE deal_id = ?`, [dealId]);
-  await auditLog.logChange('deals', dealId, 'original_estimate_file', 'attached', null, userId, 'Original estimate file removed');
+async function deleteEstimateFile(dealId, slot, userId) {
+  if (!FILE_SLOTS.includes(slot)) throw new Error('slot must be "estimate" or "final"');
+  await run(`DELETE FROM deal_estimate_files WHERE deal_id = ? AND slot = ?`, [dealId, slot]);
+  await auditLog.logChange('deals', dealId, `${slot}_file`, 'attached', null, userId, `${slot === 'final' ? 'Final' : 'Estimate'} file removed`);
   return getDeal(dealId);
 }
 
@@ -413,5 +426,5 @@ module.exports = {
   listDeals, getDeal, createDeal, updateDeal, recalculate,
   addAdder, updateAdder, deleteAdder, setApproval, setPaymentFlag, setOverride, deleteDeal,
   getCommissionSettings, getPayScaleForRep,
-  setOriginalEstimateFile, getOriginalEstimateFileBlob, deleteOriginalEstimateFile
+  setEstimateFile, getEstimateFileBlob, deleteEstimateFile
 };
