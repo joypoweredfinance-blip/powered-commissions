@@ -16,7 +16,10 @@ const EDITABLE_FIELDS = [
   // Funds Pending is Joy's own manual call, not derived from Expected minus Received — installer
   // funding quirks mean that subtraction doesn't always reflect what's actually still owed.
   'funds_pending_m1', 'funds_pending_m2',
-  'funding_status', 'funding_status_override'
+  'funding_status', 'funding_status_override',
+  // A reference number only — deliberately not in COMPUTED_FIELDS, never touched by
+  // recalculate() or any override logic, so it can never affect another figure on the deal.
+  'original_estimate_amount'
 ];
 
 const COMPUTED_FIELDS = [
@@ -112,7 +115,14 @@ async function getDeal(id) {
   // its local DEAL object wholesale; if auditLog wasn't on it, the page's history list would
   // go blank on every single action even though the rows were never touched in the database.
   const auditLogEntries = await auditLog.getLogFor('deals', id);
-  return { ...deal, adders, advances, clawbacks, auditLog: auditLogEntries };
+  // Metadata only — file_data (the actual bytes) is deliberately excluded here and only ever
+  // fetched by the dedicated download route, so attaching a large file never slows down every
+  // load of this deal (or, on listDeals, every deal on the whole Board).
+  const estimateFile = await get(
+    `SELECT id, file_name, file_type, file_size, uploaded_at FROM deal_estimate_files WHERE deal_id = ? ORDER BY id DESC LIMIT 1`,
+    [id]
+  );
+  return { ...deal, adders, advances, clawbacks, auditLog: auditLogEntries, originalEstimateFile: estimateFile || null };
 }
 
 async function createDeal(data, userId) {
@@ -372,11 +382,36 @@ async function setOverride(dealId, { override, reason, fields }, userId) {
 async function deleteDeal(id, userId) {
   await auditLog.logChange('deals', id, '_deleted', null, null, userId, 'Deal deleted');
   await run(`DELETE FROM deal_adders WHERE deal_id = ?`, [id]);
+  await run(`DELETE FROM deal_estimate_files WHERE deal_id = ?`, [id]);
   await run(`DELETE FROM deals WHERE id = ?`, [id]);
+}
+
+// Replaces whatever was there before — one file per deal, matching "the job's originally
+// estimated commission" as a single reference document, not a growing attachment list.
+async function setOriginalEstimateFile(dealId, { fileName, fileType, fileSize, fileData }, userId) {
+  await run(`DELETE FROM deal_estimate_files WHERE deal_id = ?`, [dealId]);
+  await run(
+    `INSERT INTO deal_estimate_files (deal_id, file_name, file_type, file_size, file_data, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)`,
+    [dealId, fileName, fileType || null, fileSize, fileData, userId]
+  );
+  await auditLog.logChange('deals', dealId, 'original_estimate_file', null, fileName, userId, 'Original estimate file uploaded');
+  return getDeal(dealId);
+}
+
+// The only place file_data is actually read — kept separate from getDeal() on purpose.
+async function getOriginalEstimateFileBlob(dealId) {
+  return get(`SELECT file_name, file_type, file_data FROM deal_estimate_files WHERE deal_id = ? ORDER BY id DESC LIMIT 1`, [dealId]);
+}
+
+async function deleteOriginalEstimateFile(dealId, userId) {
+  await run(`DELETE FROM deal_estimate_files WHERE deal_id = ?`, [dealId]);
+  await auditLog.logChange('deals', dealId, 'original_estimate_file', 'attached', null, userId, 'Original estimate file removed');
+  return getDeal(dealId);
 }
 
 module.exports = {
   listDeals, getDeal, createDeal, updateDeal, recalculate,
   addAdder, updateAdder, deleteAdder, setApproval, setPaymentFlag, setOverride, deleteDeal,
-  getCommissionSettings, getPayScaleForRep
+  getCommissionSettings, getPayScaleForRep,
+  setOriginalEstimateFile, getOriginalEstimateFileBlob, deleteOriginalEstimateFile
 };

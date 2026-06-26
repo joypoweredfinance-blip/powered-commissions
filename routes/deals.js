@@ -1,7 +1,13 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const dealService = require('../services/dealService');
 const addersReportService = require('../services/addersReportService');
+
+// Memory storage only — Render's filesystem is wiped on every redeploy/restart (the same
+// reason this app's database lives in Turso, not a local file), so anything uploaded here
+// goes straight into the database instead of ever touching local disk.
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 router.get('/', async (req, res) => {
   try {
@@ -121,6 +127,44 @@ router.post('/:id/payment', async (req, res) => {
 router.post('/:id/override', async (req, res) => {
   try {
     const deal = await dealService.setOverride(req.params.id, req.body, req.user.id);
+    res.json(deal);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Any format, as requested — one file per deal (uploading a new one replaces the old).
+router.post('/:id/original-estimate-file', (req, res) => {
+  upload.single('file')(req, res, async (err) => {
+    if (err) {
+      const msg = err.code === 'LIMIT_FILE_SIZE' ? 'File is too large — max 10MB.' : err.message;
+      return res.status(400).json({ error: msg });
+    }
+    if (!req.file) return res.status(400).json({ error: 'No file was uploaded.' });
+    try {
+      const deal = await dealService.setOriginalEstimateFile(req.params.id, {
+        fileName: req.file.originalname, fileType: req.file.mimetype, fileSize: req.file.size, fileData: req.file.buffer
+      }, req.user.id);
+      res.status(201).json(deal);
+    } catch (e) { res.status(400).json({ error: e.message }); }
+  });
+});
+
+router.get('/:id/original-estimate-file', async (req, res) => {
+  try {
+    const file = await dealService.getOriginalEstimateFileBlob(req.params.id);
+    if (!file) return res.status(404).json({ error: 'No file attached.' });
+    res.setHeader('Content-Type', file.file_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.file_name)}"`);
+    res.send(Buffer.from(file.file_data));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/:id/original-estimate-file', async (req, res) => {
+  try {
+    const deal = await dealService.deleteOriginalEstimateFile(req.params.id, req.user.id);
     res.json(deal);
   } catch (err) {
     res.status(400).json({ error: err.message });

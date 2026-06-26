@@ -237,6 +237,14 @@ function renderFull() {
             <button class="btn secondary small" id="overrideBtn"></button>
           </div>
           <div id="overrideForm" style="display:none; margin-top:14px; border-top:1px solid var(--brand-border); padding-top:14px;"></div>
+          <div style="margin-top:14px; border-top:1px solid var(--brand-border); padding-top:14px;">
+            <label>Original Commission Calculator Estimate ($) <span style="font-weight:400; color:var(--brand-muted); font-size:12px;">— just for comparison, never used in any calculation</span></label>
+            <div style="display:flex; gap:8px;">
+              <input type="number" step="0.01" id="f_original_estimate_amount" style="margin:0;">
+              <button class="btn secondary small" id="saveOriginalEstimateBtn" style="width:auto;">Save</button>
+            </div>
+            <div id="originalEstimateFileBox" style="margin-top:10px;"></div>
+          </div>
         </div>
 
         <div class="card" style="margin-bottom:20px;">
@@ -275,6 +283,7 @@ function renderFull() {
   renderApproval();
   renderPayment();
   renderAudit();
+  renderOriginalEstimate();
   wireEvents();
 }
 
@@ -318,6 +327,7 @@ function populateFields() {
   document.getElementById('f_m2_paid_date').value = (d.m2_paid_date || '').slice(0, 10);
 
   document.getElementById('f_admin_notes').value = d.admin_notes || '';
+  document.getElementById('f_original_estimate_amount').value = d.original_estimate_amount ?? '';
 }
 
 function renderAdders() {
@@ -467,6 +477,70 @@ function renderFundsReceived() {
   wireAmountOverrideButtons();
 }
 
+function fmtFileSize(bytes) {
+  if (!bytes) return '0 KB';
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// Self-contained: the Save/Upload/Remove actions here only ever re-render this one box, never
+// the rest of the page — this field is purely a reference number + attachment with no bearing
+// on any calculation, so nothing else should ever need to refresh because of it.
+function renderOriginalEstimate() {
+  const f = DEAL.originalEstimateFile;
+  document.getElementById('originalEstimateFileBox').innerHTML = f
+    ? `
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; background:var(--brand-bg); border-radius:8px;">
+        <div style="font-size:13px;">
+          📎 <a href="/api/deals/${dealId}/original-estimate-file" target="_blank" rel="noopener">${f.file_name}</a>
+          <span style="color:var(--brand-muted);">(${fmtFileSize(f.file_size)} · uploaded ${fmtDate(f.uploaded_at)})</span>
+        </div>
+        <button class="icon-btn" id="removeEstimateFileBtn" title="Remove">✕</button>
+      </div>
+    `
+    : `<p style="color:var(--brand-muted); font-size:12px; margin:0;">No file attached yet.</p>`;
+  document.getElementById('originalEstimateFileBox').insertAdjacentHTML('beforeend', `
+    <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+      <input type="file" id="originalEstimateFileInput" style="margin:0; font-size:12px;">
+      <button class="btn secondary small" id="uploadEstimateFileBtn" style="width:auto;">${f ? 'Replace File' : 'Attach File'}</button>
+    </div>
+  `);
+
+  document.getElementById('saveOriginalEstimateBtn').addEventListener('click', async (e) => {
+    const btn = e.target;
+    btn.disabled = true;
+    try {
+      DEAL = await api('PUT', `/api/deals/${dealId}`, { original_estimate_amount: numOrNull(val('f_original_estimate_amount')) });
+      btn.textContent = 'Saved ✓';
+      setTimeout(() => { if (document.body.contains(btn)) { btn.textContent = 'Save'; btn.disabled = false; } }, 1200);
+    } catch (err) { alert(err.message); btn.disabled = false; }
+  });
+
+  document.getElementById('uploadEstimateFileBtn').addEventListener('click', async () => {
+    const input = document.getElementById('originalEstimateFileInput');
+    const file = input.files[0];
+    if (!file) { alert('Choose a file first.'); return; }
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await fetch(`/api/deals/${dealId}/original-estimate-file`, { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      DEAL = data;
+      renderOriginalEstimate();
+    } catch (err) { alert(err.message); }
+  });
+
+  const removeBtn = document.getElementById('removeEstimateFileBtn');
+  if (removeBtn) removeBtn.addEventListener('click', async () => {
+    if (!confirm('Remove this attached file?')) return;
+    try {
+      DEAL = await api('DELETE', `/api/deals/${dealId}/original-estimate-file`);
+      renderOriginalEstimate();
+    } catch (err) { alert(err.message); }
+  });
+}
+
 function renderApproval() {
   const d = DEAL;
   let html = '';
@@ -549,8 +623,17 @@ function wireAmountOverrideButtons() {
       if (!reason) return;
       try {
         DEAL = await api('POST', `/api/deals/${dealId}/override`, { override: true, reason, fields: { [field]: value } });
-        renderCalc();
-        renderPayment();
+        // Only refresh the ONE section this field actually lives in — none of these fields
+        // (Expected M1/M2, Etai/Noy, Joey) are shown by the Commission Calculator itself, so
+        // there's never a reason to rebuild it (or, via its own internal cascade, Funds
+        // Received too) just because a Payment Status amount was saved. Rebuilding sections
+        // that don't need it is exactly what was silently discarding whatever date or amount
+        // Joy had mid-typed in an unrelated section at the same time.
+        if (field.startsWith('expected_')) {
+          renderFundsReceived();
+        } else {
+          renderPayment();
+        }
         renderAudit();
       } catch (e) { alert(e.message); }
     });
@@ -675,6 +758,13 @@ function wireEvents() {
         ${d.manual_override ? '<button class="btn secondary small" id="clearOverrideBtn" style="width:auto;">Turn Off &amp; Recalculate</button>' : ''}
       </div>
     `;
+    // Once Joy types into Closer/Setter Pay herself, a later tweak to Pay Scale Rate (fixing a
+    // typo, say) should never silently overwrite what she just typed — auto-fill only ever
+    // applies to a field she hasn't manually touched yet.
+    let closerPayEditedByUser = false;
+    let setterPayEditedByUser = false;
+    document.getElementById('ov_closer_pay_net').addEventListener('input', () => { closerPayEditedByUser = true; });
+    document.getElementById('ov_setter_pay').addEventListener('input', () => { setterPayEditedByUser = true; });
     document.getElementById('ov_pay_scale_rate').addEventListener('input', (e) => {
       const rate = parseFloat(e.target.value);
       if (isNaN(rate) || !SETTINGS) return;
@@ -686,8 +776,8 @@ function wireEvents() {
       const closerPayPre = hasSetter ? pool * SETTINGS.closer_split_pct : pool;
       const cashbackDeduction = (DEAL.cashback_amount || 0) * SETTINGS.cashback_split_pct;
       const closerNet = closerPayPre - cashbackDeduction;
-      document.getElementById('ov_closer_pay_net').value = round2(closerNet);
-      document.getElementById('ov_setter_pay').value = round2(setterPay);
+      if (!closerPayEditedByUser) document.getElementById('ov_closer_pay_net').value = round2(closerNet);
+      if (!setterPayEditedByUser) document.getElementById('ov_setter_pay').value = round2(setterPay);
     });
     document.getElementById('saveOverrideBtn').addEventListener('click', async () => {
       const reason = val('ov_reason');

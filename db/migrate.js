@@ -51,7 +51,8 @@ const COLUMN_MIGRATIONS = [
   { table: 'deals', column: 'field_override_reasons', definition: "TEXT NOT NULL DEFAULT '{}'" },
   { table: 'deals', column: 'joey_m1_bonus', definition: 'REAL' },
   { table: 'deals', column: 'joey_m1_paid', definition: 'INTEGER NOT NULL DEFAULT 0' },
-  { table: 'deals', column: 'joey_m1_paid_date', definition: 'TEXT' }
+  { table: 'deals', column: 'joey_m1_paid_date', definition: 'TEXT' },
+  { table: 'deals', column: 'original_estimate_amount', definition: 'REAL' }
 ];
 
 async function columnExists(table, column) {

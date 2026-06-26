@@ -159,6 +159,9 @@ module.exports = [
     funds_received_m2_date TEXT,
     funding_status TEXT,
     funding_status_override TEXT,
+    -- Purely a reference number Joy can compare against the live calculator — never read by
+    -- recalculate() or any other formula, by design.
+    original_estimate_amount REAL,
     below_floor INTEGER NOT NULL DEFAULT 0,
     closer_paid INTEGER NOT NULL DEFAULT 0,
     closer_paid_date TEXT,
@@ -203,6 +206,20 @@ module.exports = [
     amount REAL NOT NULL DEFAULT 0,
     counts_as_hard_cost INTEGER NOT NULL DEFAULT 1,
     sort_order INTEGER NOT NULL DEFAULT 0
+  )`,
+  // Kept in its own table (not a column on deals) so the file's bytes are never accidentally
+  // pulled along by a "SELECT d.*" — getDeal()/listDeals() would otherwise drag the whole file
+  // into every single deal fetch and the Board's full list, which is exactly the kind of thing
+  // that makes a page slow without anyone noticing why.
+  `CREATE TABLE IF NOT EXISTS deal_estimate_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    deal_id INTEGER NOT NULL REFERENCES deals(id),
+    file_name TEXT NOT NULL,
+    file_type TEXT,
+    file_size INTEGER NOT NULL,
+    file_data BLOB NOT NULL,
+    uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+    uploaded_by INTEGER REFERENCES users(id)
   )`,
   `CREATE TABLE IF NOT EXISTS advances (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
