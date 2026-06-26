@@ -29,41 +29,29 @@ function renderTrendChart(canvasId, trend, { color = '#6B3FD4', label = 'Paid' }
   });
 }
 
-// Simple least-squares fit over (0..n-1, values) — no extra chart.js plugin needed for a
-// straight trendline.
-function linearRegression(values) {
-  const n = values.length;
-  if (n < 2) return values.map(() => values[0] || 0);
-  let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
-  values.forEach((y, x) => { sumX += x; sumY += y; sumXY += x * y; sumXX += x * x; });
-  const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX || 1);
-  const intercept = (sumY - slope * sumX) / n;
-  return values.map((_, x) => slope * x + intercept);
-}
-
-function renderWeeklyComparisonChart(canvasId, weeklyBreakdown) {
+// Per-job comparison — Funds Received vs Commission Paid side by side for each individual
+// job, so the gap (or match) between the two is visible per job rather than across two
+// independently time-bucketed totals that may not actually relate to the same work.
+// Horizontal bars read better than vertical ones once labels are customer names.
+function renderJobComparisonChart(canvasId, jobComparison) {
   const ctx = document.getElementById(canvasId).getContext('2d');
-  const commissionsPaid = weeklyBreakdown.map((w) => w.commissionsPaid);
   return new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: weeklyBreakdown.map((w) => w.label),
+      labels: jobComparison.map((j) => j.customerName),
       datasets: [
-        { label: 'Commissions Paid', data: commissionsPaid, backgroundColor: '#6B3FD4', borderRadius: 6, maxBarThickness: 32 },
-        { label: 'Funds Received', data: weeklyBreakdown.map((w) => w.fundsReceived), backgroundColor: '#1B5E45', borderRadius: 6, maxBarThickness: 32 },
-        {
-          type: 'line', label: 'Trend (Commissions Paid)', data: linearRegression(commissionsPaid),
-          borderColor: '#B6760F', borderWidth: 2, borderDash: [6, 4], pointRadius: 0, fill: false, tension: 0
-        }
+        { label: 'Funds Received', data: jobComparison.map((j) => j.fundsReceived), backgroundColor: '#1B5E45', borderRadius: 4, maxBarThickness: 18 },
+        { label: 'Commission Paid', data: jobComparison.map((j) => j.commissionPaid), backgroundColor: '#6B3FD4', borderRadius: 4, maxBarThickness: 18 }
       ]
     },
     options: {
+      indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
       plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 12 } } } },
       scales: {
-        y: { beginAtZero: true, ticks: { callback: (v) => '$' + v.toLocaleString() }, grid: { color: '#EFEDF6' } },
-        x: { grid: { display: false } }
+        x: { beginAtZero: true, ticks: { callback: (v) => '$' + v.toLocaleString() }, grid: { color: '#EFEDF6' } },
+        y: { grid: { display: false }, ticks: { font: { size: 11 } } }
       }
     }
   });

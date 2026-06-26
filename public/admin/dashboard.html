@@ -15,9 +15,17 @@
 <script>
 let ALL_STATUSES = [];
 let SELECTED_STATUS_IDS = [];
+let SELECTED_FUNDING_STATUSES = [];
 let DATE_RANGE = null; // { startDate, endDate } or null for All Time
 let chartInstance = null;
 let pieInstance = null;
+
+// Fixed, closed list — separate from the flexible CRM status list pulled from /api/meta.
+const FUNDING_STATUSES = [
+  'M1 Pending', 'M1 Approved - Awaiting Funding', 'M1 Rejected',
+  'M2 Pending', 'M2 Approved - Awaiting Funding', 'M2 Rejected Clawback',
+  'M1 Funded', 'M1+M2 Funded'
+];
 
 document.getElementById('pageContent').innerHTML = `
   <div class="filter-grid" style="margin-bottom:18px;">
@@ -32,13 +40,20 @@ document.getElementById('pageContent').innerHTML = `
           <option value="range">Custom Range</option>
         </select>
         <div id="dateSecondaryControls" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+        <button class="btn small" id="dateApplyBtn" style="width:auto;">Apply</button>
       </div>
     </div>
     <div class="card filter-card status-filter-wrap">
-      <div style="font-size:12px; font-weight:700; color:var(--brand-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Filter by Status</div>
-      <button class="btn secondary small" id="statusFilterBtn" style="width:auto;">Filter by Status ▾</button>
+      <div style="font-size:12px; font-weight:700; color:var(--brand-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Filter by CRM Status</div>
+      <button class="btn secondary small" id="statusFilterBtn" style="width:auto;">Filter by CRM Status ▾</button>
       <span id="filterSummary" style="font-size:12px; color:var(--brand-muted); margin-left:10px;"></span>
       <div class="status-filter-panel" id="statusFilterPanel" style="display:none;"></div>
+    </div>
+    <div class="card filter-card funding-status-filter-wrap" style="position:relative;">
+      <div style="font-size:12px; font-weight:700; color:var(--brand-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Filter by Funding Status</div>
+      <button class="btn secondary small" id="fundingStatusFilterBtn" style="width:auto;">Filter by Funding Status ▾</button>
+      <span id="fundingFilterSummary" style="font-size:12px; color:var(--brand-muted); margin-left:10px;"></span>
+      <div class="status-filter-panel" id="fundingStatusFilterPanel" style="display:none;"></div>
     </div>
   </div>
 
@@ -49,8 +64,9 @@ document.getElementById('pageContent').innerHTML = `
   <div class="detail-grid">
     <div>
       <div class="card" style="margin-bottom:20px;">
-        <p class="section-title" id="trendTitle">Commissions Paid vs Funds Received</p>
-        <div style="height:240px;"><canvas id="trendChart"></canvas></div>
+        <p class="section-title" id="trendTitle">Funds Received vs Commission Paid, by Job</p>
+        <p id="trendNote" style="font-size:12px; color:var(--brand-muted); margin:-6px 0 10px;"></p>
+        <div id="trendChartWrap"><canvas id="trendChart"></canvas></div>
       </div>
       <div class="card" style="margin-bottom:20px;">
         <p class="section-title">Contract Value — Where It Goes</p>
@@ -88,6 +104,8 @@ function kpiCard(label, value, sub, cls = '') {
 function pad(n) { return String(n).padStart(2, '0'); }
 function isoDate(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 
+// Picking a date type/value only stages it — nothing takes effect on the rest of the
+// dashboard until "Apply" is clicked, so the numbers and charts don't jump around mid-pick.
 function renderDateSecondaryControls(type) {
   const el = document.getElementById('dateSecondaryControls');
   const now = new Date();
@@ -97,7 +115,6 @@ function renderDateSecondaryControls(type) {
     let opts = '';
     for (let y = now.getFullYear(); y >= now.getFullYear() - 5; y--) opts += `<option value="${y}">${y}</option>`;
     el.innerHTML = `<select id="yearPicker" style="margin:0;">${opts}</select>`;
-    document.getElementById('yearPicker').addEventListener('change', applyDateFilter);
   } else if (type === 'month') {
     let opts = '';
     for (let i = 0; i < 24; i++) {
@@ -105,19 +122,15 @@ function renderDateSecondaryControls(type) {
       opts += `<option value="${d.getFullYear()}-${pad(d.getMonth() + 1)}">${d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</option>`;
     }
     el.innerHTML = `<select id="monthPicker" style="margin:0;">${opts}</select>`;
-    document.getElementById('monthPicker').addEventListener('change', applyDateFilter);
   } else if (type === 'week') {
     el.innerHTML = `<input type="date" id="weekPicker" value="${isoDate(now)}" style="margin:0;"><span style="font-size:12px; color:var(--brand-muted); align-self:center;">pick any day in the week</span>`;
-    document.getElementById('weekPicker').addEventListener('change', applyDateFilter);
   } else if (type === 'range') {
     const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
     el.innerHTML = `
       <input type="date" id="rangeStart" value="${isoDate(weekAgo)}" style="margin:0;">
       <span style="align-self:center; color:var(--brand-muted);">to</span>
       <input type="date" id="rangeEnd" value="${isoDate(now)}" style="margin:0;">
-      <button class="btn small" id="rangeApply" style="width:auto;">Apply</button>
     `;
-    document.getElementById('rangeApply').addEventListener('click', applyDateFilter);
   }
 }
 
@@ -145,56 +158,80 @@ function applyDateFilter() {
   load();
 }
 
+function statusPanelHtml(options, cbClass) {
+  return `
+    ${options}
+    <div class="actions">
+      <button class="btn secondary small panel-select-all" data-cb="${cbClass}" style="width:auto;">All</button>
+      <button class="btn secondary small panel-clear-all" data-cb="${cbClass}" style="width:auto;">Clear</button>
+      <button class="btn small panel-apply" data-cb="${cbClass}" style="width:auto; margin-left:auto;">Apply</button>
+    </div>
+  `;
+}
+
 async function loadStatuses() {
   const meta = await api('GET', '/api/meta');
   ALL_STATUSES = meta.statuses;
-  document.getElementById('statusFilterPanel').innerHTML = `
-    ${ALL_STATUSES.map((s) => `
-      <label><input type="checkbox" class="status-cb" value="${s.id}"> ${s.label}</label>
-    `).join('')}
-    <div class="actions">
-      <button class="btn secondary small" id="statusSelectAll" style="width:auto;">All</button>
-      <button class="btn secondary small" id="statusClearAll" style="width:auto;">Clear</button>
-      <button class="btn small" id="statusApply" style="width:auto; margin-left:auto;">Apply</button>
-    </div>
-  `;
+  document.getElementById('statusFilterPanel').innerHTML = statusPanelHtml(
+    ALL_STATUSES.map((s) => `<label><input type="checkbox" class="status-cb" value="${s.id}"> ${s.label}</label>`).join(''),
+    'status-cb'
+  );
+  document.getElementById('fundingStatusFilterPanel').innerHTML = statusPanelHtml(
+    FUNDING_STATUSES.map((s) => `<label><input type="checkbox" class="funding-status-cb" value="${s}"> ${s}</label>`).join(''),
+    'funding-status-cb'
+  );
 
   document.getElementById('dateTypeFilter').addEventListener('change', (e) => {
     renderDateSecondaryControls(e.target.value);
-    applyDateFilter();
   });
+  document.getElementById('dateApplyBtn').addEventListener('click', applyDateFilter);
+
   document.getElementById('statusFilterBtn').addEventListener('click', () => {
     const panel = document.getElementById('statusFilterPanel');
     panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
   });
-  document.getElementById('statusSelectAll').addEventListener('click', () => {
-    document.querySelectorAll('.status-cb').forEach((cb) => { cb.checked = true; });
+  document.getElementById('fundingStatusFilterBtn').addEventListener('click', () => {
+    const panel = document.getElementById('fundingStatusFilterPanel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
   });
-  document.getElementById('statusClearAll').addEventListener('click', () => {
-    document.querySelectorAll('.status-cb').forEach((cb) => { cb.checked = false; });
-  });
-  document.getElementById('statusApply').addEventListener('click', () => {
-    SELECTED_STATUS_IDS = [...document.querySelectorAll('.status-cb:checked')].map((cb) => cb.value);
-    document.getElementById('statusFilterPanel').style.display = 'none';
+
+  document.querySelectorAll('.panel-select-all').forEach((btn) => btn.addEventListener('click', () => {
+    document.querySelectorAll(`.${btn.dataset.cb}`).forEach((cb) => { cb.checked = true; });
+  }));
+  document.querySelectorAll('.panel-clear-all').forEach((btn) => btn.addEventListener('click', () => {
+    document.querySelectorAll(`.${btn.dataset.cb}`).forEach((cb) => { cb.checked = false; });
+  }));
+  document.querySelectorAll('.panel-apply').forEach((btn) => btn.addEventListener('click', () => {
+    if (btn.dataset.cb === 'status-cb') {
+      SELECTED_STATUS_IDS = [...document.querySelectorAll('.status-cb:checked')].map((cb) => cb.value);
+      document.getElementById('statusFilterPanel').style.display = 'none';
+    } else {
+      SELECTED_FUNDING_STATUSES = [...document.querySelectorAll('.funding-status-cb:checked')].map((cb) => cb.value);
+      document.getElementById('fundingStatusFilterPanel').style.display = 'none';
+    }
     load();
-  });
+  }));
   document.addEventListener('click', (e) => {
     const wrap = document.querySelector('.status-filter-wrap');
     if (wrap && !wrap.contains(e.target)) document.getElementById('statusFilterPanel').style.display = 'none';
+    const fwrap = document.querySelector('.funding-status-filter-wrap');
+    if (fwrap && !fwrap.contains(e.target)) document.getElementById('fundingStatusFilterPanel').style.display = 'none';
   });
 }
 
 async function load() {
   const params = new URLSearchParams();
   SELECTED_STATUS_IDS.forEach((id) => params.append('statusIds', id));
+  SELECTED_FUNDING_STATUSES.forEach((s) => params.append('fundingStatuses', s));
   if (DATE_RANGE) {
     params.set('startDate', DATE_RANGE.startDate);
     params.set('endDate', DATE_RANGE.endDate);
   }
 
-  const summary = [];
-  if (SELECTED_STATUS_IDS.length) summary.push(`${SELECTED_STATUS_IDS.length} status${SELECTED_STATUS_IDS.length > 1 ? 'es' : ''} selected`);
-  document.getElementById('filterSummary').textContent = summary.join(' · ');
+  document.getElementById('filterSummary').textContent = SELECTED_STATUS_IDS.length
+    ? `${SELECTED_STATUS_IDS.length} status${SELECTED_STATUS_IDS.length > 1 ? 'es' : ''} selected` : '';
+  document.getElementById('fundingFilterSummary').textContent = SELECTED_FUNDING_STATUSES.length
+    ? `${SELECTED_FUNDING_STATUSES.length} selected` : '';
 
   const d = await api('GET', `/api/dashboard/overall?${params.toString()}`);
   const k = d.kpis;
@@ -243,8 +280,12 @@ async function load() {
     `;
 
   if (chartInstance) chartInstance.destroy();
-  document.getElementById('trendTitle').textContent = `Commissions Paid vs Funds Received — ${d.periodLabel}`;
-  chartInstance = renderWeeklyComparisonChart('trendChart', d.chartBreakdown);
+  document.getElementById('trendTitle').textContent = `Funds Received vs Commission Paid, by Job — ${d.periodLabel}`;
+  document.getElementById('trendNote').textContent = d.jobComparison.length === 0
+    ? 'No jobs with funds received or commission paid in this period.'
+    : (d.jobComparisonTruncated ? 'Showing the top 30 jobs by combined value.' : '');
+  document.getElementById('trendChartWrap').style.height = Math.max(240, d.jobComparison.length * 28) + 'px';
+  chartInstance = d.jobComparison.length === 0 ? null : renderJobComparisonChart('trendChart', d.jobComparison);
   renderFunnelChart('funnelChart', d.pipeline);
   if (pieInstance) pieInstance.destroy();
   pieInstance = d.contractBreakdown.slices.length === 0 ? null : renderContractPieChart('pieChart', d.contractBreakdown);

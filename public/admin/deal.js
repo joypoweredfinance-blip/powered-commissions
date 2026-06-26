@@ -51,6 +51,15 @@ function populateDropdownSelect(elId, category, currentValue) {
   el.innerHTML = html;
 }
 
+// Funding Status is a fixed, closed list (not the flexible admin-editable CRM status list) —
+// plus a free-text override for the rare case that doesn't fit one of these.
+const FUNDING_STATUSES = [
+  'M1 Pending', 'M1 Approved - Awaiting Funding', 'M1 Rejected',
+  'M2 Pending', 'M2 Approved - Awaiting Funding', 'M2 Rejected Clawback',
+  'M1 Funded', 'M1+M2 Funded'
+];
+const ADDER_CATEGORY_LABELS = { mpu: 'MPU', battery: 'Battery', reroof_sow: 'Roof Costs', permit: 'Permit', misc: 'Miscellaneous', other: 'Other' };
+
 function selectOptions(list, selected, placeholder, labelKey = 'label') {
   let html = `<option value="">${placeholder}</option>`;
   list.forEach((item) => {
@@ -121,7 +130,17 @@ function renderFull() {
           </div>
           <div class="field-row">
             <div><label>Customer Phone</label><input type="text" id="f_customer_phone"></div>
-            <div><label>Status</label><select id="f_status_id"></select></div>
+            <div><label>CRM Status</label><select id="f_status_id"></select></div>
+          </div>
+          <div class="field-row">
+            <div>
+              <label>Funding Status</label>
+              <select id="f_funding_status">
+                <option value="">— Select —</option>
+                ${FUNDING_STATUSES.map((s) => `<option value="${s}">${s}</option>`).join('')}
+              </select>
+            </div>
+            <div><label>Funding Status Override <span style="font-weight:400; text-transform:none; font-size:12px; color:var(--brand-muted);">(free text, takes precedence if filled in)</span></label><input type="text" id="f_funding_status_override" placeholder="leave blank to use the dropdown above"></div>
           </div>
           <div class="field-row">
             <div><label>Closer</label><select id="f_closer_rep_id"></select></div>
@@ -190,12 +209,12 @@ function renderFull() {
           <div class="field-row cols-3">
             <div><label>NTP Approved</label><input type="date" id="f_ntp_approved_date"></div>
             <div><label>M1 Approved</label><input type="date" id="f_m1_approved_date"></div>
-            <div><label>M1 Paid</label><input type="date" id="f_m1_paid_date"></div>
+            <div><label>M1 Commission Paid</label><input type="date" id="f_m1_paid_date"></div>
           </div>
           <div class="field-row cols-3">
             <div><label>PTO Granted</label><input type="date" id="f_pto_granted_date"></div>
             <div><label>M2 Approved</label><input type="date" id="f_m2_approved_date"></div>
-            <div><label>M2 Paid</label><input type="date" id="f_m2_paid_date"></div>
+            <div><label>M2 Commission Paid</label><input type="date" id="f_m2_paid_date"></div>
           </div>
         </div>
 
@@ -265,6 +284,8 @@ function populateFields() {
   document.getElementById('f_customer_address').value = d.customer_address || '';
   document.getElementById('f_customer_phone').value = d.customer_phone || '';
   document.getElementById('f_status_id').innerHTML = selectOptions(META.statuses, d.status_id, 'No status');
+  document.getElementById('f_funding_status').value = d.funding_status || '';
+  document.getElementById('f_funding_status_override').value = d.funding_status_override || '';
   document.getElementById('f_closer_rep_id').innerHTML = repOptions('closer', d.closer_rep_id);
   document.getElementById('f_setter_rep_id').innerHTML = repOptions('setter', d.setter_rep_id);
   document.getElementById('f_date_signed').value = (d.date_signed || '').slice(0, 10);
@@ -308,7 +329,7 @@ function renderAdders() {
       <div class="adder-row" data-id="${a.id}">
         <input type="text" class="a-label" value="${(a.label || '').replace(/"/g, '&quot;')}" placeholder="Label">
         <select class="a-category">
-          ${['mpu', 'battery', 'reroof_sow', 'permit', 'misc', 'other'].map((c) => `<option value="${c}" ${c === a.category ? 'selected' : ''}>${c}</option>`).join('')}
+          ${Object.entries(ADDER_CATEGORY_LABELS).map(([c, label]) => `<option value="${c}" ${c === a.category ? 'selected' : ''}>${label}</option>`).join('')}
         </select>
         <input type="number" step="0.01" class="a-amount" value="${a.amount}">
         <label style="display:flex; align-items:center; gap:4px; font-size:12px; white-space:nowrap;">
@@ -365,30 +386,65 @@ function renderCalc() {
   html += calcRow('Cashback Deduction', d.cashback_amount ? `−${fmtMoney(d.cashback_amount * 0.5)}` : '$0.00');
   html += calcRow('Closer Pay (net)', fmtMoney(d.closer_pay_net), { total: true });
   if (d.setter_rep_id) html += calcRow('Setter Pay', fmtMoney(d.setter_pay), { total: true });
-  if (d.manual_override) {
-    html += `<div class="badge amber" style="margin-top:10px;">Manual override active${d.override_reason ? ': ' + d.override_reason : ''}</div>`;
+  // Only fields this Calculator actually shows — so an override saved elsewhere (e.g. Joey's
+  // Bonus in Payment Status) never shows its reason here, and vice versa.
+  const CALC_FIELDS = ['net_ppw', 'pay_scale_rate', 'rep_pool', 'closer_pay_gross', 'closer_pay_net', 'setter_pay'];
+  let lockedCalcFields = [];
+  try { lockedCalcFields = JSON.parse(d.overridden_fields || '[]').filter((f) => CALC_FIELDS.includes(f)); } catch (e) { /* ignore */ }
+  if (lockedCalcFields.length) {
+    const reasonsMap = (() => { try { return JSON.parse(d.field_override_reasons || '{}'); } catch (e) { return {}; } })();
+    const reasons = Array.from(new Set(lockedCalcFields.map((f) => reasonsMap[f]).filter(Boolean)));
+    html += `<div class="badge amber" style="margin-top:10px;">Manual override active${reasons.length ? ': ' + reasons.join('; ') : ''}</div>`;
   }
   document.getElementById('calcLines').innerHTML = html;
   document.getElementById('overrideBtn').textContent = d.manual_override ? 'Edit Override' : 'Manual Override';
   renderFundsReceived();
 }
 
+// `parseFloat(x) || null` turns an explicit 0 into null, since 0 is falsy in JS — every plain
+// amount save in this file should go through this instead so a real $0 entry actually sticks.
+function numOrNull(v) {
+  const n = parseFloat(v);
+  return v === '' || v === null || v === undefined || isNaN(n) ? null : n;
+}
+
+function fieldOverrideReason(deal, field) {
+  try { return JSON.parse(deal.field_override_reasons || '{}')[field] || null; } catch (e) { return null; }
+}
+
+function expectedAmountRow(label, amount, overrideField, reason) {
+  return `
+    <div style="margin-bottom:6px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span class="lbl" style="color:var(--brand-muted);">${label}</span>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <input type="number" step="0.01" class="amount-override" data-field="${overrideField}" value="${amount ?? ''}" style="margin:0; max-width:130px;">
+          <button class="btn secondary small amount-save" data-field="${overrideField}" style="width:auto;">Save</button>
+        </div>
+      </div>
+      ${reason ? `<div style="font-size:11px; color:var(--brand-muted); margin-top:2px;">Override reason: ${reason}</div>` : ''}
+    </div>
+  `;
+}
+
 function renderFundsReceived() {
   const d = DEAL;
   const totalReceived = (d.funds_received_m1 || 0) + (d.funds_received_m2 || 0);
   document.getElementById('fundsReceivedBox').innerHTML = `
-    <div class="calc-line"><span class="lbl">Expected M1</span><span class="val">${fmtMoney(d.expected_m1_amount)}</span></div>
+    ${expectedAmountRow('Expected M1', d.expected_m1_amount, 'expected_m1_amount', fieldOverrideReason(d, 'expected_m1_amount'))}
     <div class="field-row" style="margin:6px 0 14px;">
+      <div><label>Funds Pending M1 ($)</label><input type="number" step="0.01" id="fp_m1_amount" value="${d.funds_pending_m1 ?? ''}"></div>
       <div><label>Received M1 ($)</label><input type="number" step="0.01" id="fr_m1_amount" value="${d.funds_received_m1 ?? ''}"></div>
       <div><label>Date Received</label><input type="date" id="fr_m1_date" value="${(d.funds_received_m1_date || '').slice(0, 10)}"></div>
     </div>
-    <div class="calc-line"><span class="lbl">Expected M2</span><span class="val">${fmtMoney(d.expected_m2_amount)}</span></div>
+    ${expectedAmountRow('Expected M2', d.expected_m2_amount, 'expected_m2_amount', fieldOverrideReason(d, 'expected_m2_amount'))}
     <div class="field-row" style="margin:6px 0 14px;">
+      <div><label>Funds Pending M2 ($)</label><input type="number" step="0.01" id="fp_m2_amount" value="${d.funds_pending_m2 ?? ''}"></div>
       <div><label>Received M2 ($)</label><input type="number" step="0.01" id="fr_m2_amount" value="${d.funds_received_m2 ?? ''}"></div>
       <div><label>Date Received</label><input type="date" id="fr_m2_date" value="${(d.funds_received_m2_date || '').slice(0, 10)}"></div>
     </div>
     <div class="calc-line total"><span class="lbl">Total Received</span><span class="val">${fmtMoney(totalReceived)}</span></div>
-    <button class="btn secondary small" id="saveFundsBtn" style="width:auto; margin-top:10px;">Save Funds Received</button>
+    <button class="btn secondary small" id="saveFundsBtn" style="width:auto; margin-top:10px;">Save Funds Pending / Received</button>
   `;
   document.getElementById('saveFundsBtn').addEventListener('click', async (e) => {
     const btn = e.target;
@@ -396,16 +452,19 @@ function renderFundsReceived() {
     btn.textContent = 'Saving…';
     try {
       DEAL = await api('PUT', `/api/deals/${dealId}`, {
-        funds_received_m1: parseFloat(val('fr_m1_amount')) || null,
+        funds_pending_m1: numOrNull(val('fp_m1_amount')),
+        funds_pending_m2: numOrNull(val('fp_m2_amount')),
+        funds_received_m1: numOrNull(val('fr_m1_amount')),
         funds_received_m1_date: val('fr_m1_date') || null,
-        funds_received_m2: parseFloat(val('fr_m2_amount')) || null,
+        funds_received_m2: numOrNull(val('fr_m2_amount')),
         funds_received_m2_date: val('fr_m2_date') || null
       });
       renderFundsReceived();
     } catch (err) { alert(err.message); }
     btn.disabled = false;
-    btn.textContent = 'Save Funds Received';
+    btn.textContent = 'Save Funds Pending / Received';
   });
+  wireAmountOverrideButtons();
 }
 
 function renderApproval() {
@@ -456,7 +515,7 @@ function paymentRow(label, recipient, paid, amount, paidDate) {
 
 // Owner/Joey rows get an editable amount on top of paid+date, since these are the figures
 // Joy needs to manually override directly (not via the Commission Calculator's override form).
-function editableAmountRow(label, recipient, paid, amount, paidDate, overrideField) {
+function editableAmountRow(label, recipient, paid, amount, paidDate, overrideField, reason) {
   return `
     <div style="padding:10px 0; border-bottom:1px solid var(--brand-border);">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
@@ -472,7 +531,30 @@ function editableAmountRow(label, recipient, paid, amount, paidDate, overrideFie
         <input type="number" step="0.01" class="amount-override" data-field="${overrideField}" value="${amount ?? ''}" style="margin:0; max-width:140px;">
         <button class="btn secondary small amount-save" data-field="${overrideField}" style="width:auto;">Save</button>
       </div>
+      ${reason ? `<div style="font-size:11px; color:var(--brand-muted); margin-top:2px;">Override reason: ${reason}</div>` : ''}
     </div>`;
+}
+
+// Shared by both the Funds Received section (Expected M1/M2) and Payment Status (Etai/Noy/
+// Joey amounts) — each amount-override input always saves through setOverride with its OWN
+// reason, never a value coerced away from an explicit 0.
+function wireAmountOverrideButtons() {
+  document.querySelectorAll('.amount-save').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const field = btn.dataset.field;
+      const input = document.querySelector(`.amount-override[data-field="${field}"]`);
+      const value = numOrNull(input.value);
+      if (value === null) { alert('Enter an amount before saving.'); return; }
+      const reason = prompt(`Reason for overriding this amount (required):`);
+      if (!reason) return;
+      try {
+        DEAL = await api('POST', `/api/deals/${dealId}/override`, { override: true, reason, fields: { [field]: value } });
+        renderCalc();
+        renderPayment();
+        renderAudit();
+      } catch (e) { alert(e.message); }
+    });
+  });
 }
 
 function renderPayment() {
@@ -481,11 +563,11 @@ function renderPayment() {
   if (d.closer_rep_id) html += paymentRow('Closer', 'closer', d.closer_paid, d.closer_pay_net, d.closer_paid_date);
   if (d.setter_rep_id) html += paymentRow('Setter', 'setter', d.setter_paid, d.setter_pay, d.setter_paid_date);
   html += `<p class="section-title" style="margin-top:16px;">Internal Payroll (admin only) <span style="font-weight:400; text-transform:none; font-size:12px;">— amounts are editable, click Save to override</span></p>`;
-  html += editableAmountRow('Etai — M1', 'owner_etai_m1', d.owner_etai_m1_paid, d.owner_etai_m1_amount, d.owner_etai_m1_paid_date, 'owner_etai_m1_amount');
-  html += editableAmountRow('Etai — M2', 'owner_etai_m2', d.owner_etai_m2_paid, d.owner_etai_m2_amount, d.owner_etai_m2_paid_date, 'owner_etai_m2_amount');
-  html += editableAmountRow('Noy — M1', 'owner_noy_m1', d.owner_noy_m1_paid, d.owner_noy_m1_amount, d.owner_noy_m1_paid_date, 'owner_noy_m1_amount');
-  html += editableAmountRow('Noy — M2', 'owner_noy_m2', d.owner_noy_m2_paid, d.owner_noy_m2_amount, d.owner_noy_m2_paid_date, 'owner_noy_m2_amount');
-  html += editableAmountRow("Joey's M2 Bonus", 'joey', d.joey_paid, d.joey_m2_bonus, d.joey_paid_date, 'joey_m2_bonus');
+  html += editableAmountRow('Etai — M1', 'owner_etai_m1', d.owner_etai_m1_paid, d.owner_etai_m1_amount, d.owner_etai_m1_paid_date, 'owner_etai_m1_amount', fieldOverrideReason(d, 'owner_etai_m1_amount'));
+  html += editableAmountRow('Etai — M2', 'owner_etai_m2', d.owner_etai_m2_paid, d.owner_etai_m2_amount, d.owner_etai_m2_paid_date, 'owner_etai_m2_amount', fieldOverrideReason(d, 'owner_etai_m2_amount'));
+  html += editableAmountRow('Noy — M1', 'owner_noy_m1', d.owner_noy_m1_paid, d.owner_noy_m1_amount, d.owner_noy_m1_paid_date, 'owner_noy_m1_amount', fieldOverrideReason(d, 'owner_noy_m1_amount'));
+  html += editableAmountRow('Noy — M2', 'owner_noy_m2', d.owner_noy_m2_paid, d.owner_noy_m2_amount, d.owner_noy_m2_paid_date, 'owner_noy_m2_amount', fieldOverrideReason(d, 'owner_noy_m2_amount'));
+  html += editableAmountRow("Joey's Bonus", 'joey', d.joey_paid, d.joey_m2_bonus, d.joey_paid_date, 'joey_m2_bonus', fieldOverrideReason(d, 'joey_m2_bonus'));
   document.getElementById('paymentBox').innerHTML = html;
 
   async function sendPayment(recipient, paid, date) {
@@ -506,22 +588,7 @@ function renderPayment() {
       sendPayment(input.dataset.recipient, true, input.value);
     });
   });
-  document.querySelectorAll('.amount-save').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const field = btn.dataset.field;
-      const input = document.querySelector(`.amount-override[data-field="${field}"]`);
-      const value = input.value;
-      if (value === '') { alert('Enter an amount before saving.'); return; }
-      const reason = prompt(`Reason for overriding this amount (required):`);
-      if (!reason) return;
-      try {
-        DEAL = await api('POST', `/api/deals/${dealId}/override`, { override: true, reason, fields: { [field]: parseFloat(value) } });
-        renderPayment();
-        renderCalc();
-        renderAudit();
-      } catch (e) { alert(e.message); }
-    });
-  });
+  wireAmountOverrideButtons();
 }
 
 function renderAudit() {
@@ -667,6 +734,8 @@ function wireEvents() {
       customer_address: val('f_customer_address'),
       customer_phone: val('f_customer_phone'),
       status_id: intval('f_status_id'),
+      funding_status: val('f_funding_status') || null,
+      funding_status_override: val('f_funding_status_override') || null,
       closer_rep_id: intval('f_closer_rep_id'),
       setter_rep_id: intval('f_setter_rep_id'),
       date_signed: dateOrNull(val('f_date_signed')),

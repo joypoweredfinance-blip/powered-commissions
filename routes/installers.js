@@ -34,6 +34,20 @@ router.put('/installers/:id', async (req, res) => {
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
+router.delete('/installers/:id', async (req, res) => {
+  try {
+    const installer = await get(`SELECT * FROM installers WHERE id = ?`, [req.params.id]);
+    if (!installer) return res.status(404).json({ error: 'Installer not found' });
+    const inUse = await get(`SELECT COUNT(*) c FROM deals WHERE installer_id = ?`, [req.params.id]);
+    if (inUse.c > 0) {
+      return res.status(400).json({ error: `Can't delete — ${inUse.c} deal(s) still reference this installer. Deactivate it instead.` });
+    }
+    await run(`DELETE FROM installers WHERE id = ?`, [req.params.id]);
+    await auditLog.logChange('installers', req.params.id, '_deleted', installer.name, null, req.user.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
 router.post('/financiers', async (req, res) => {
   try {
     const { name, min_fico, notes } = req.body;
@@ -52,6 +66,20 @@ router.put('/financiers/:id', async (req, res) => {
     await run(`UPDATE financiers SET ${setClause} WHERE id = ?`, [...fields.map((f) => req.body[f]), req.params.id]);
     await auditLog.logDiff('financiers', req.params.id, old, req.body, req.user.id);
     res.json(await get(`SELECT * FROM financiers WHERE id = ?`, [req.params.id]));
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.delete('/financiers/:id', async (req, res) => {
+  try {
+    const financier = await get(`SELECT * FROM financiers WHERE id = ?`, [req.params.id]);
+    if (!financier) return res.status(404).json({ error: 'Financier not found' });
+    const inUse = await get(`SELECT COUNT(*) c FROM deals WHERE financier_id = ?`, [req.params.id]);
+    if (inUse.c > 0) {
+      return res.status(400).json({ error: `Can't delete — ${inUse.c} deal(s) still reference this financier. Deactivate it instead.` });
+    }
+    await run(`DELETE FROM financiers WHERE id = ?`, [req.params.id]);
+    await auditLog.logChange('financiers', req.params.id, '_deleted', financier.name, null, req.user.id);
+    res.json({ ok: true });
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 

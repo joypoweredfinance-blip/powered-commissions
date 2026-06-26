@@ -5,8 +5,8 @@ const auditLog = require('../services/auditLog');
 
 router.get('/', async (req, res) => {
   try {
-    const { statusId, repId, installerId, search, phase } = req.query;
-    const deals = await dealService.listDeals({ statusId, repId, installerId, search, phase });
+    const { statusId, statusIds, fundingStatuses, repId, installerId, search, phase, startDate, endDate } = req.query;
+    const deals = await dealService.listDeals({ statusId, statusIds, fundingStatuses, repId, installerId, search, phase, startDate, endDate });
     res.json(deals);
   } catch (err) {
     res.status(500).json({ error: err.message });

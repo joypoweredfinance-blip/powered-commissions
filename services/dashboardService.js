@@ -18,48 +18,6 @@ function lastNMonths(n) {
   return months;
 }
 
-// Builds chart buckets covering [startDate, endDate] at a granularity that scales with the
-// span, so a week filter gets daily bars, a year filter gets monthly bars, etc.
-function generateBuckets(startDate, endDate) {
-  const start = new Date(startDate + 'T00:00:00');
-  const end = new Date(endDate + 'T00:00:00');
-  const fmt = (d) => d.toISOString().slice(0, 10);
-  const spanDays = Math.round((end - start) / 86400000) + 1;
-  const buckets = [];
-
-  if (spanDays <= 14) {
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const ds = fmt(d);
-      buckets.push({ label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), startDate: ds, endDate: ds });
-    }
-  } else if (spanDays <= 90) {
-    for (let cur = new Date(start); cur <= end; cur.setDate(cur.getDate() + 7)) {
-      const chunkStart = fmt(cur);
-      const chunkEndRaw = new Date(cur); chunkEndRaw.setDate(chunkEndRaw.getDate() + 6);
-      const chunkEnd = fmt(chunkEndRaw > end ? end : chunkEndRaw);
-      buckets.push({ label: cur.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), startDate: chunkStart, endDate: chunkEnd });
-    }
-  } else if (spanDays <= 731) {
-    for (let cur = new Date(start.getFullYear(), start.getMonth(), 1); cur <= end; cur.setMonth(cur.getMonth() + 1)) {
-      const y = cur.getFullYear(), m = cur.getMonth();
-      const chunkStartRaw = new Date(y, m, 1);
-      const chunkStart = fmt(chunkStartRaw < start ? start : chunkStartRaw);
-      const lastDay = new Date(y, m + 1, 0);
-      const chunkEnd = fmt(lastDay < end ? lastDay : end);
-      buckets.push({ label: cur.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }), startDate: chunkStart, endDate: chunkEnd });
-    }
-  } else {
-    for (let y = start.getFullYear(); y <= end.getFullYear(); y++) {
-      const chunkStartRaw = new Date(y, 0, 1);
-      const chunkStart = fmt(chunkStartRaw < start ? start : chunkStartRaw);
-      const lastOfYear = new Date(y, 11, 31);
-      const chunkEnd = fmt(lastOfYear < end ? lastOfYear : end);
-      buckets.push({ label: String(y), startDate: chunkStart, endDate: chunkEnd });
-    }
-  }
-  return buckets;
-}
-
 function inRange(dateStr, startDate, endDate) {
   if (!dateStr) return false;
   const d = dateStr.slice(0, 10);
@@ -68,10 +26,20 @@ function inRange(dateStr, startDate, endDate) {
   return true;
 }
 
-async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
+async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endDate } = {}) {
   const statusIdsArr = statusIds === undefined || statusIds === null ? [] : (Array.isArray(statusIds) ? statusIds : [statusIds]);
   const statusIdList = statusIdsArr.map(Number).filter((n) => !isNaN(n));
   const statusFilterSql = statusIdList.length ? ` AND d.status_id IN (${statusIdList.join(',')})` : '';
+
+  // Funding Status is a second, independent status dimension (fixed list, separate from the
+  // flexible CRM status above) — the override column takes precedence when set, same as it
+  // does everywhere else this value is shown.
+  const fundingStatusArr = fundingStatuses === undefined || fundingStatuses === null ? [] : (Array.isArray(fundingStatuses) ? fundingStatuses : [fundingStatuses]);
+  const fundingStatusFilterSql = fundingStatusArr.length
+    ? ` AND COALESCE(NULLIF(d.funding_status_override, ''), d.funding_status) IN (${fundingStatusArr.map(() => '?').join(',')})`
+    : '';
+  const fundingStatusArgs = fundingStatusArr.length ? fundingStatusArr : [];
+
   const hasPeriod = !!(startDate && endDate);
   const periodLabel = hasPeriod
     ? (startDate === endDate ? startDate : `${startDate} to ${endDate}`)
@@ -87,10 +55,12 @@ async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
     SELECT d.id, d.closer_rep_id, d.setter_rep_id, d.closer_pay_net, d.setter_pay,
            d.closer_paid, d.closer_paid_date, d.setter_paid, d.setter_paid_date,
            d.closer_breakdown_approved, d.setter_breakdown_approved,
-           d.m1_paid_date, d.net_ppw, d.system_size_kw, d.gross_amount, d.rep_pool
+           d.m1_paid_date, d.net_ppw, d.system_size_kw, d.gross_amount, d.rep_pool,
+           d.owner_etai_total, d.owner_noy_total, d.joey_m2_bonus,
+           d.funds_received_m1, d.funds_received_m2
     FROM deals d
-    WHERE 1=1 ${statusFilterSql}
-  `);
+    WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}
+  `, fundingStatusArgs);
   // Rep names looked up separately so the filtered query above stays simple to read.
   const repNameRows = await all(`SELECT id, full_name, display_name FROM reps`);
   const repNameMap = {};
@@ -110,10 +80,13 @@ async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
       fundedCount++;
       if (d.system_size_kw !== null && d.system_size_kw !== undefined) periodSystemSizes.push(d.system_size_kw);
       if (d.net_ppw !== null && d.net_ppw !== undefined) periodNetPpws.push(d.net_ppw);
-      if (d.gross_amount !== null && d.gross_amount !== undefined) {
-        periodGross.push(d.gross_amount);
-        periodPoweredNet.push(d.gross_amount - (d.rep_pool || 0));
-      }
+      if (d.gross_amount !== null && d.gross_amount !== undefined) periodGross.push(d.gross_amount);
+      // POWERED Net = Total Funds Received less (Closer Pay + Setter Pay + Staff Pay) for
+      // that job — not Gross minus Rep Pool, which double-counted the installer's own EPC
+      // split rather than reflecting cash actually in hand.
+      const staffPay = (d.owner_etai_total || 0) + (d.owner_noy_total || 0) + (d.joey_m2_bonus || 0);
+      const totalFundsReceived = (d.funds_received_m1 || 0) + (d.funds_received_m2 || 0);
+      periodPoweredNet.push(totalFundsReceived - ((d.closer_pay_net || 0) + (d.setter_pay || 0) + staffPay));
     }
     if (d.closer_rep_id && !d.closer_breakdown_approved) pendingApproval += d.closer_pay_net || 0;
     if (d.setter_rep_id && !d.setter_breakdown_approved) pendingApproval += d.setter_pay || 0;
@@ -153,8 +126,8 @@ async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
            d.funds_received_m1, d.funds_received_m1_date, d.funds_received_m2, d.funds_received_m2_date,
            fin.name as financier_name
     FROM deals d LEFT JOIN financiers fin ON fin.id = d.financier_id
-    WHERE 1=1 ${statusFilterSql}
-  `);
+    WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}
+  `, fundingStatusArgs);
   let staffPay = 0;
   let fundsReceived = 0;
   const financierTotals = {};
@@ -196,7 +169,7 @@ async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
   // each adder category, and what's left as POWERED's own margin. Anchored on date_signed
   // (when the contract value was actually established), filtered by the same status/date
   // selection as the rest of the dashboard.
-  const pieDeals = await all(`SELECT id, contract_value, epc_rate_per_watt, system_size_kw, date_signed FROM deals d WHERE 1=1 ${statusFilterSql}`);
+  const pieDeals = await all(`SELECT id, contract_value, epc_rate_per_watt, system_size_kw, date_signed FROM deals d WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}`, fundingStatusArgs);
   const pieMatchedIds = new Set(pieDeals.filter((d) => !hasPeriod || inRange(d.date_signed, startDate, endDate)).map((d) => d.id));
   let totalContractValue = 0, totalEpcCost = 0;
   for (const d of pieDeals) {
@@ -204,7 +177,7 @@ async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
     totalContractValue += d.contract_value || 0;
     totalEpcCost += computeEpcCost(d.epc_rate_per_watt, d.system_size_kw || 0);
   }
-  const adderRows = await all(`SELECT da.category, da.amount, da.deal_id FROM deal_adders da JOIN deals d ON d.id = da.deal_id WHERE 1=1 ${statusFilterSql}`);
+  const adderRows = await all(`SELECT da.category, da.amount, da.deal_id FROM deal_adders da JOIN deals d ON d.id = da.deal_id WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}`, fundingStatusArgs);
   const categoryTotals = {};
   for (const a of adderRows) {
     if (!pieMatchedIds.has(a.deal_id)) continue;
@@ -245,12 +218,12 @@ async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
   // 0/— when nothing was funded in that period, same as every other period-scoped KPI.
   const awaitingM1Rows = await all(`
     SELECT id, expected_m1_amount FROM deals d
-    WHERE m1_approved_date IS NOT NULL AND funds_received_m1_date IS NULL ${statusFilterSql}
-  `);
+    WHERE m1_approved_date IS NOT NULL AND funds_received_m1_date IS NULL ${statusFilterSql}${fundingStatusFilterSql}
+  `, fundingStatusArgs);
   const awaitingM2Rows = await all(`
     SELECT id, expected_m2_amount FROM deals d
-    WHERE m2_approved_date IS NOT NULL AND funds_received_m2_date IS NULL ${statusFilterSql}
-  `);
+    WHERE m2_approved_date IS NOT NULL AND funds_received_m2_date IS NULL ${statusFilterSql}${fundingStatusFilterSql}
+  `, fundingStatusArgs);
   const awaitingM1Total = round2(awaitingM1Rows.reduce((s, r) => s + (r.expected_m1_amount || 0), 0));
   const awaitingM2Total = round2(awaitingM2Rows.reduce((s, r) => s + (r.expected_m2_amount || 0), 0));
   const unionMap = new Map();
@@ -269,31 +242,37 @@ async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
     avgPoweredNet: avgOfPeriod(periodPoweredNet)
   };
 
-  // Chart: commissions paid vs funds received, bucketed to fit the selected period.
-  // Defaults to the last 12 months when no period is selected.
-  let chartStart = startDate, chartEnd = endDate;
-  if (!hasPeriod) {
-    const now = new Date();
-    const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1);
-    chartStart = twelveMonthsAgo.toISOString().slice(0, 10);
-    chartEnd = now.toISOString().slice(0, 10);
+  // Per-job comparison: Total Funds Received vs Commission Paid for each individual job,
+  // rather than two independently time-bucketed totals — bucketing by time made the two bars
+  // line up by coincidence of timing, not by which job they actually belonged to, so a job
+  // funded in February and paid out in June looked like two unrelated, disconnected events.
+  // A job is included if any of its relevant dates falls in the selected period (or always,
+  // when no period is selected).
+  const jobRows = await all(`
+    SELECT d.id, d.customer_name,
+           d.closer_paid, d.closer_paid_date, d.closer_pay_net,
+           d.setter_paid, d.setter_paid_date, d.setter_pay,
+           d.funds_received_m1_date, d.funds_received_m1, d.funds_received_m2_date, d.funds_received_m2
+    FROM deals d WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}
+  `, fundingStatusArgs);
+  const jobComparisonAll = [];
+  for (const d of jobRows) {
+    const closerInRange = d.closer_paid && inRange(d.closer_paid_date, startDate, endDate);
+    const setterInRange = d.setter_paid && inRange(d.setter_paid_date, startDate, endDate);
+    const m1InRange = inRange(d.funds_received_m1_date, startDate, endDate);
+    const m2InRange = inRange(d.funds_received_m2_date, startDate, endDate);
+    const matches = !hasPeriod
+      ? (d.closer_paid || d.setter_paid || d.funds_received_m1 || d.funds_received_m2)
+      : (closerInRange || setterInRange || m1InRange || m2InRange);
+    if (!matches) continue;
+    const commissionPaid = round2((d.closer_paid ? d.closer_pay_net || 0 : 0) + (d.setter_paid ? d.setter_pay || 0 : 0));
+    const fundsReceived = round2((d.funds_received_m1 || 0) + (d.funds_received_m2 || 0));
+    if (!commissionPaid && !fundsReceived) continue;
+    jobComparisonAll.push({ customerName: d.customer_name, fundsReceived, commissionPaid });
   }
-  const buckets = generateBuckets(chartStart, chartEnd);
-  const chartDeals = await all(`
-    SELECT closer_paid_date, closer_pay_net, setter_paid_date, setter_pay,
-           funds_received_m1_date, funds_received_m1, funds_received_m2_date, funds_received_m2
-    FROM deals d WHERE 1=1 ${statusFilterSql}
-  `);
-  const chartBreakdown = buckets.map((b) => {
-    let bCommissionsPaid = 0, bFundsReceived = 0;
-    for (const d of chartDeals) {
-      if (inRange(d.closer_paid_date, b.startDate, b.endDate)) bCommissionsPaid += d.closer_pay_net || 0;
-      if (inRange(d.setter_paid_date, b.startDate, b.endDate)) bCommissionsPaid += d.setter_pay || 0;
-      if (inRange(d.funds_received_m1_date, b.startDate, b.endDate)) bFundsReceived += d.funds_received_m1 || 0;
-      if (inRange(d.funds_received_m2_date, b.startDate, b.endDate)) bFundsReceived += d.funds_received_m2 || 0;
-    }
-    return { label: b.label, commissionsPaid: round2(bCommissionsPaid), fundsReceived: round2(bFundsReceived) };
-  });
+  jobComparisonAll.sort((a, b) => (b.fundsReceived + b.commissionPaid) - (a.fundsReceived + a.commissionPaid));
+  const jobComparisonTruncated = jobComparisonAll.length > 30;
+  const jobComparison = jobComparisonAll.slice(0, 30);
 
   return {
     kpis: {
@@ -312,7 +291,7 @@ async function getOverallDashboard({ statusIds, startDate, endDate } = {}) {
     fundingStatus,
     fundsByFinancier, fundsByFinancierTotal,
     contractBreakdown,
-    chartBreakdown,
+    jobComparison, jobComparisonTruncated,
     pipeline,
     leaderboard,
     recentActivity

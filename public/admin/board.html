@@ -12,7 +12,43 @@
 <script>renderAdminShell('/admin/board.html', 'Deals Board');</script>
 <script>
 document.getElementById('pageContent').classList.add('full-bleed');
+
+// Fixed, closed list — same set used on the Dashboard and the deal page.
+const FUNDING_STATUSES = [
+  'M1 Pending', 'M1 Approved - Awaiting Funding', 'M1 Rejected',
+  'M2 Pending', 'M2 Approved - Awaiting Funding', 'M2 Rejected Clawback',
+  'M1 Funded', 'M1+M2 Funded'
+];
+let SELECTED_BOARD_STATUS_IDS = [];
+let SELECTED_BOARD_FUNDING_STATUSES = [];
+let BOARD_DATE_RANGE = null;
+
 document.getElementById('pageContent').innerHTML = `
+  <div class="filter-grid" style="margin-bottom:14px;">
+    <div class="card filter-card">
+      <div style="font-size:12px; font-weight:700; color:var(--brand-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Filter by Date Signed</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <input type="date" id="boardRangeStart" style="margin:0;">
+        <span style="color:var(--brand-muted);">to</span>
+        <input type="date" id="boardRangeEnd" style="margin:0;">
+        <button class="btn small" id="boardDateApplyBtn" style="width:auto;">Apply</button>
+        <button class="btn secondary small" id="boardDateClearBtn" style="width:auto;">Clear</button>
+      </div>
+    </div>
+    <div class="card filter-card board-status-filter-wrap" style="position:relative;">
+      <div style="font-size:12px; font-weight:700; color:var(--brand-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Filter by CRM Status</div>
+      <button class="btn secondary small" id="boardStatusFilterBtn" style="width:auto;">Filter by CRM Status ▾</button>
+      <span id="boardStatusSummary" style="font-size:12px; color:var(--brand-muted); margin-left:10px;"></span>
+      <div class="status-filter-panel" id="boardStatusFilterPanel" style="display:none;"></div>
+    </div>
+    <div class="card filter-card board-funding-filter-wrap" style="position:relative;">
+      <div style="font-size:12px; font-weight:700; color:var(--brand-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Filter by Funding Status</div>
+      <button class="btn secondary small" id="boardFundingFilterBtn" style="width:auto;">Filter by Funding Status ▾</button>
+      <span id="boardFundingSummary" style="font-size:12px; color:var(--brand-muted); margin-left:10px;"></span>
+      <div class="status-filter-panel" id="boardFundingFilterPanel" style="display:none;"></div>
+    </div>
+  </div>
+
   <div class="toolbar">
     <input type="text" id="searchInput" placeholder="Search customer or address…">
     <select id="repFilter"><option value="">All reps</option></select>
@@ -29,19 +65,22 @@ document.getElementById('pageContent').innerHTML = `
     <table class="data-table" id="dealsTable">
       <thead>
         <tr>
-          <th>Customer</th><th>Installer</th><th>Financier</th><th>Closer</th><th>Setter</th>
-          <th>Solar Date</th><th>System Size</th><th>Contract Value</th><th>EPC Cost</th>
-          <th>Total Deductions</th><th>Gross</th><th>Net PPW</th><th>Rep Pool</th>
+          <th>Customer</th><th class="col-compact">Installer</th><th class="col-compact">Financier</th>
+          <th class="col-compact">Closer</th><th class="col-compact">Setter</th><th class="col-compact">Solar Date</th>
+          <th>System Size</th><th>Contract Value</th><th>EPC Cost</th>
+          <th>Total Adders <span style="font-weight:400; text-transform:none;">(Roof + MPU + Battery + Misc)</span></th>
+          <th>Gross</th><th>Net PPW</th><th>Rep Pool</th>
           <th>Closer Pay</th><th>Setter Pay</th><th>Staff Pay</th>
           <th>Funds Pending M1</th><th>Funds Pending M2</th><th>Total Funds Pending</th>
-          <th>Funds Received M1</th><th>Funds Received M2</th><th>POWERED Net</th><th>Approved</th>
+          <th>Funds Received M1</th><th>Funds Received M2</th><th>Total Funds Received</th>
+          <th>POWERED Net</th><th>Approved</th>
         </tr>
       </thead>
-      <tbody id="dealsBody"><tr><td colspan="23" style="text-align:center; color:var(--brand-muted); padding:30px;">Loading…</td></tr></tbody>
+      <tbody id="dealsBody"><tr><td colspan="24" style="text-align:center; color:var(--brand-muted); padding:30px;">Loading…</td></tr></tbody>
     </table>
   </div>
 `;
-const COL_COUNT = 23;
+const COL_COUNT = 24;
 
 let META = { reps: [], installers: [] };
 
@@ -52,12 +91,65 @@ function approvalBadge(deal) {
   return bits.join(' ') || '—';
 }
 
+function statusPanelHtml(options, cbClass) {
+  return `
+    ${options}
+    <div class="actions">
+      <button class="btn secondary small panel-select-all" data-cb="${cbClass}" style="width:auto;">All</button>
+      <button class="btn secondary small panel-clear-all" data-cb="${cbClass}" style="width:auto;">Clear</button>
+      <button class="btn small panel-apply" data-cb="${cbClass}" style="width:auto; margin-left:auto;">Apply</button>
+    </div>
+  `;
+}
+
 async function loadMeta() {
   META = await api('GET', '/api/meta');
   const repFilter = document.getElementById('repFilter');
   META.reps.forEach((r) => repFilter.insertAdjacentHTML('beforeend', `<option value="${r.id}">${r.display_name || r.full_name}</option>`));
   const installerFilter = document.getElementById('installerFilter');
   META.installers.forEach((i) => installerFilter.insertAdjacentHTML('beforeend', `<option value="${i.id}">${i.name}</option>`));
+
+  document.getElementById('boardStatusFilterPanel').innerHTML = statusPanelHtml(
+    META.statuses.map((s) => `<label><input type="checkbox" class="board-status-cb" value="${s.id}"> ${s.label}</label>`).join(''),
+    'board-status-cb'
+  );
+  document.getElementById('boardFundingFilterPanel').innerHTML = statusPanelHtml(
+    FUNDING_STATUSES.map((s) => `<label><input type="checkbox" class="board-funding-cb" value="${s}"> ${s}</label>`).join(''),
+    'board-funding-cb'
+  );
+
+  document.getElementById('boardStatusFilterBtn').addEventListener('click', () => {
+    const panel = document.getElementById('boardStatusFilterPanel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  });
+  document.getElementById('boardFundingFilterBtn').addEventListener('click', () => {
+    const panel = document.getElementById('boardFundingFilterPanel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  });
+  document.querySelectorAll('.panel-select-all').forEach((btn) => btn.addEventListener('click', () => {
+    document.querySelectorAll(`.${btn.dataset.cb}`).forEach((cb) => { cb.checked = true; });
+  }));
+  document.querySelectorAll('.panel-clear-all').forEach((btn) => btn.addEventListener('click', () => {
+    document.querySelectorAll(`.${btn.dataset.cb}`).forEach((cb) => { cb.checked = false; });
+  }));
+  document.querySelectorAll('.panel-apply').forEach((btn) => btn.addEventListener('click', () => {
+    if (btn.dataset.cb === 'board-status-cb') {
+      SELECTED_BOARD_STATUS_IDS = [...document.querySelectorAll('.board-status-cb:checked')].map((cb) => cb.value);
+      document.getElementById('boardStatusSummary').textContent = SELECTED_BOARD_STATUS_IDS.length ? `${SELECTED_BOARD_STATUS_IDS.length} selected` : '';
+      document.getElementById('boardStatusFilterPanel').style.display = 'none';
+    } else {
+      SELECTED_BOARD_FUNDING_STATUSES = [...document.querySelectorAll('.board-funding-cb:checked')].map((cb) => cb.value);
+      document.getElementById('boardFundingSummary').textContent = SELECTED_BOARD_FUNDING_STATUSES.length ? `${SELECTED_BOARD_FUNDING_STATUSES.length} selected` : '';
+      document.getElementById('boardFundingFilterPanel').style.display = 'none';
+    }
+    loadDeals();
+  }));
+  document.addEventListener('click', (e) => {
+    const wrap = document.querySelector('.board-status-filter-wrap');
+    if (wrap && !wrap.contains(e.target)) document.getElementById('boardStatusFilterPanel').style.display = 'none';
+    const fwrap = document.querySelector('.board-funding-filter-wrap');
+    if (fwrap && !fwrap.contains(e.target)) document.getElementById('boardFundingFilterPanel').style.display = 'none';
+  });
 }
 
 async function loadDeals() {
@@ -70,11 +162,17 @@ async function loadDeals() {
   if (repId) params.set('repId', repId);
   if (installerId) params.set('installerId', installerId);
   if (phase) params.set('phase', phase);
+  SELECTED_BOARD_STATUS_IDS.forEach((id) => params.append('statusIds', id));
+  SELECTED_BOARD_FUNDING_STATUSES.forEach((s) => params.append('fundingStatuses', s));
+  if (BOARD_DATE_RANGE) {
+    params.set('startDate', BOARD_DATE_RANGE.startDate);
+    params.set('endDate', BOARD_DATE_RANGE.endDate);
+  }
 
   const deals = await api('GET', `/api/deals?${params.toString()}`);
   const tbody = document.getElementById('dealsBody');
   if (deals.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="${COL_COUNT}" style="text-align:center; color:var(--brand-muted); padding:30px;">No deals yet. Click "+ New Deal" to add your first one.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${COL_COUNT}" style="text-align:center; color:var(--brand-muted); padding:30px;">No deals match these filters.</td></tr>`;
     return;
   }
   let html = '';
@@ -85,10 +183,12 @@ async function loadDeals() {
       lastStatus = d.status_label;
     }
     const staffPay = (d.owner_etai_total || 0) + (d.owner_noy_total || 0) + (d.joey_m2_bonus || 0);
-    const totalDeductions = d.total_adders || 0;
-    const poweredNet = (d.gross_amount || 0) - (d.rep_pool || 0);
-    const fundsPendingM1 = Math.max(0, (d.expected_m1_amount || 0) - (d.funds_received_m1 || 0));
-    const fundsPendingM2 = Math.max(0, (d.expected_m2_amount || 0) - (d.funds_received_m2 || 0));
+    const totalAdders = d.total_adders || 0;
+    const totalFundsReceived = (d.funds_received_m1 || 0) + (d.funds_received_m2 || 0);
+    // POWERED Net = Total Funds Received less (Closer Pay + Setter Pay + Staff Pay) for this job.
+    const poweredNet = totalFundsReceived - ((d.closer_pay_net || 0) + (d.setter_pay || 0) + staffPay);
+    const fundsPendingM1 = d.funds_pending_m1 ?? 0;
+    const fundsPendingM2 = d.funds_pending_m2 ?? 0;
     const netPpwCell = d.below_floor
       ? '<span class="badge amber">Below floor</span>'
       : (d.net_ppw !== null && d.net_ppw !== undefined
@@ -97,15 +197,15 @@ async function loadDeals() {
     html += `
       <tr class="deal-row" data-id="${d.id}">
         <td><strong>${d.customer_name}</strong><br><span style="color:var(--brand-muted); font-size:12px;">${d.customer_address || ''}</span></td>
-        <td>${d.installer_name || '—'}</td>
-        <td>${d.financier_name || '—'}</td>
-        <td>${d.closer_display || d.closer_name || '—'}</td>
-        <td>${d.setter_display || d.setter_name || '—'}</td>
-        <td>${fmtDate(d.install_completed_date)}</td>
+        <td class="col-compact">${d.installer_name || '—'}</td>
+        <td class="col-compact">${d.financier_name || '—'}</td>
+        <td class="col-compact">${d.closer_display || d.closer_name || '—'}</td>
+        <td class="col-compact">${d.setter_display || d.setter_name || '—'}</td>
+        <td class="col-compact">${fmtDate(d.install_completed_date)}</td>
         <td>${d.system_size_kw ? d.system_size_kw + ' kW' : '—'}</td>
         <td>${fmtMoney(d.contract_value)}</td>
         <td>${fmtMoney(d.epc_cost)}</td>
-        <td>${fmtMoney(totalDeductions)}</td>
+        <td>${fmtMoney(totalAdders)}</td>
         <td>${fmtMoney(d.gross_amount)}</td>
         <td>${netPpwCell}</td>
         <td>${fmtMoney(d.rep_pool)}</td>
@@ -117,6 +217,7 @@ async function loadDeals() {
         <td>${fmtMoney(fundsPendingM1 + fundsPendingM2)}</td>
         <td>${fmtMoney(d.funds_received_m1)}</td>
         <td>${fmtMoney(d.funds_received_m2)}</td>
+        <td>${fmtMoney(totalFundsReceived)}</td>
         <td>${fmtMoney(poweredNet)}</td>
         <td>${approvalBadge(d)}</td>
       </tr>
@@ -133,6 +234,18 @@ document.getElementById('repFilter').addEventListener('change', loadDeals);
 document.getElementById('installerFilter').addEventListener('change', loadDeals);
 document.getElementById('phaseFilter').addEventListener('change', loadDeals);
 document.getElementById('newDealBtn').addEventListener('click', () => { window.location.href = '/admin/deal.html'; });
+document.getElementById('boardDateApplyBtn').addEventListener('click', () => {
+  const start = document.getElementById('boardRangeStart').value;
+  const end = document.getElementById('boardRangeEnd').value;
+  BOARD_DATE_RANGE = (start && end) ? { startDate: start, endDate: end } : null;
+  loadDeals();
+});
+document.getElementById('boardDateClearBtn').addEventListener('click', () => {
+  document.getElementById('boardRangeStart').value = '';
+  document.getElementById('boardRangeEnd').value = '';
+  BOARD_DATE_RANGE = null;
+  loadDeals();
+});
 
 // loadDeals doesn't read from META, so these run as two parallel requests instead of one
 // waiting on the other — each Turso round-trip has real latency, so this halves the wait.

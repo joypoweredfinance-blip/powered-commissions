@@ -12,7 +12,11 @@ const EDITABLE_FIELDS = [
   'monthly_payment', 'rate_per_kwh', 'escalator_pct', 'cashback_amount', 'date_signed', 'install_date',
   'install_completed_date', 'ntp_approved_date', 'm1_approved_date', 'm1_paid_date', 'pto_granted_date',
   'm2_approved_date', 'm2_paid_date', 'admin_notes',
-  'funds_received_m1', 'funds_received_m1_date', 'funds_received_m2', 'funds_received_m2_date'
+  'funds_received_m1', 'funds_received_m1_date', 'funds_received_m2', 'funds_received_m2_date',
+  // Funds Pending is Joy's own manual call, not derived from Expected minus Received — installer
+  // funding quirks mean that subtraction doesn't always reflect what's actually still owed.
+  'funds_pending_m1', 'funds_pending_m2',
+  'funding_status', 'funding_status_override'
 ];
 
 const COMPUTED_FIELDS = [
@@ -42,9 +46,9 @@ async function getStandardScale() {
   return { id: scale.id, name: scale.name, hard_floor_ppw: scale.hard_floor_ppw, tiers };
 }
 
-async function listDeals({ statusId, repId, installerId, search, phase } = {}) {
+async function listDeals({ statusId, statusIds, fundingStatuses, repId, installerId, search, phase, startDate, endDate } = {}) {
   // total_adders is a correlated subquery rather than a second round-trip per deal — the
-  // board needs "Total Deductions (Roof + Adders)" per row, and this keeps the whole list
+  // board needs "Total Adders (Roof + Adders)" per row, and this keeps the whole list
   // a single query (libsql/Turso round-trip latency is the real cost here, not the SQL).
   let sql = `
     SELECT d.*, cr.full_name as closer_name, cr.display_name as closer_display,
@@ -62,11 +66,24 @@ async function listDeals({ statusId, repId, installerId, search, phase } = {}) {
     WHERE 1=1
   `;
   const args = [];
-  if (statusId) { sql += ` AND d.status_id = ?`; args.push(statusId); }
+  // statusId (single) is kept for any older caller; statusIds (array) is what the board's
+  // multi-select filter actually sends, same shape as the dashboard's CRM status filter.
+  const statusIdList = (statusIds ? (Array.isArray(statusIds) ? statusIds : [statusIds]) : (statusId ? [statusId] : []))
+    .map(Number).filter((n) => !isNaN(n));
+  if (statusIdList.length) { sql += ` AND d.status_id IN (${statusIdList.map(() => '?').join(',')})`; args.push(...statusIdList); }
+  const fundingStatusList = fundingStatuses === undefined || fundingStatuses === null ? [] : (Array.isArray(fundingStatuses) ? fundingStatuses : [fundingStatuses]);
+  if (fundingStatusList.length) {
+    sql += ` AND COALESCE(NULLIF(d.funding_status_override, ''), d.funding_status) IN (${fundingStatusList.map(() => '?').join(',')})`;
+    args.push(...fundingStatusList);
+  }
   if (repId) { sql += ` AND (d.closer_rep_id = ? OR d.setter_rep_id = ?)`; args.push(repId, repId); }
   if (installerId) { sql += ` AND d.installer_id = ?`; args.push(installerId); }
   if (phase) { sql += ` AND ds.phase = ?`; args.push(phase); }
   if (search) { sql += ` AND (d.customer_name LIKE ? OR d.customer_address LIKE ?)`; args.push(`%${search}%`, `%${search}%`); }
+  // Anchored on Date Signed — the one date every deal reliably has, same anchor the dashboard's
+  // contract-value pie chart uses.
+  if (startDate) { sql += ` AND d.date_signed >= ?`; args.push(startDate); }
+  if (endDate) { sql += ` AND d.date_signed <= ?`; args.push(endDate); }
   sql += ` ORDER BY ds.sort_order ASC, d.updated_at DESC`;
   return all(sql, args);
 }
@@ -130,6 +147,10 @@ function parseOverriddenFields(deal) {
   try { return JSON.parse(deal.overridden_fields || '[]'); } catch (e) { return []; }
 }
 
+function parseFieldOverrideReasons(deal) {
+  try { return JSON.parse(deal.field_override_reasons || '{}'); } catch (e) { return {}; }
+}
+
 async function recalculate(id, userId, { force = false } = {}) {
   const deal = await get(`SELECT * FROM deals WHERE id = ?`, [id]);
   if (!deal) throw new Error('Deal not found');
@@ -137,7 +158,7 @@ async function recalculate(id, userId, { force = false } = {}) {
   // locked field (e.g. just Joey's bonus) is skipped while everything else still recalculates.
   const lockedFields = force ? [] : parseOverriddenFields(deal);
   if (force) {
-    await run(`UPDATE deals SET manual_override = 0, overridden_fields = '[]' WHERE id = ?`, [id]);
+    await run(`UPDATE deals SET manual_override = 0, overridden_fields = '[]', field_override_reasons = '{}' WHERE id = ?`, [id]);
   }
 
   const adders = await all(`SELECT amount, counts_as_hard_cost FROM deal_adders WHERE deal_id = ?`, [id]);
@@ -291,7 +312,7 @@ async function setPaymentFlag(dealId, recipient, paid, date, userId) {
 // every lock at once.
 async function setOverride(dealId, { override, reason, fields }, userId) {
   if (override === false) {
-    await run(`UPDATE deals SET manual_override = 0, overridden_fields = '[]', override_reason = ?, override_by = ?, override_at = datetime('now') WHERE id = ?`,
+    await run(`UPDATE deals SET manual_override = 0, overridden_fields = '[]', field_override_reasons = '{}', override_reason = ?, override_by = ?, override_at = datetime('now') WHERE id = ?`,
       [reason || null, userId, dealId]);
     await auditLog.logChange('deals', dealId, 'manual_override', true, false, userId, reason);
     return getDeal(dealId);
@@ -324,9 +345,14 @@ async function setOverride(dealId, { override, reason, fields }, userId) {
       const values = finalKeys.map((f) => finalFields[f]);
 
       const lockedFields = Array.from(new Set([...parseOverriddenFields(oldRow), ...finalKeys]));
+      // Reason is tracked per field, not as one shared deal-wide note — otherwise overriding
+      // Joey's bonus in Payment Status would overwrite the reason shown for a Net PPW override
+      // saved earlier from the Commission Calculator, and vice versa.
+      const fieldReasons = parseFieldOverrideReasons(oldRow);
+      finalKeys.forEach((f) => { fieldReasons[f] = reason || null; });
       await run(
-        `UPDATE deals SET ${setClause}, manual_override = 1, overridden_fields = ?, override_reason = ?, override_by = ?, override_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`,
-        [...values, JSON.stringify(lockedFields), reason || null, userId, dealId]
+        `UPDATE deals SET ${setClause}, manual_override = 1, overridden_fields = ?, field_override_reasons = ?, override_reason = ?, override_by = ?, override_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`,
+        [...values, JSON.stringify(lockedFields), JSON.stringify(fieldReasons), reason || null, userId, dealId]
       );
       await auditLog.logDiff('deals', dealId, oldRow, finalFields, userId, reason || 'Manual override of computed values');
     }
