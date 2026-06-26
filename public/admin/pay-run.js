@@ -60,7 +60,7 @@ function render() {
 
     <div class="card" style="margin-bottom:20px;">
       <p class="section-title">Section 4 · Joey's Weekly Pay and Bonus</p>
-      <table class="data-table"><thead><tr><th>Customer</th><th>Net PPW</th><th>Bonus</th></tr></thead>
+      <table class="data-table"><thead><tr><th>Customer</th><th>Net PPW</th><th>Bonus M1</th><th>Bonus M2</th><th>Total</th></tr></thead>
       <tbody id="joeyRows"></tbody></table>
       <button class="btn secondary small" id="addJoeyCandidatesBtn" style="width:auto; margin-top:10px;">+ Add Deals</button>
       <div id="joeyCandidatesPanel" style="display:none; margin-top:10px;"></div>
@@ -164,12 +164,14 @@ function renderOwnerSection(type, tbodyId, rows) {
 
 function renderJoeySection(rows) {
   document.getElementById('joeyRows').innerHTML = rows.length === 0
-    ? '<tr><td colspan="3" style="text-align:center; color:var(--brand-muted); padding:16px;">Nothing included yet.</td></tr>'
+    ? '<tr><td colspan="5" style="text-align:center; color:var(--brand-muted); padding:16px;">Nothing included yet.</td></tr>'
     : rows.map((r) => `
       <tr>
         <td>${r.customerName}<br><span style="color:var(--brand-muted); font-size:12px;">${r.customerAddress || ''}</span></td>
         <td>${r.netPpw ?? '—'}</td>
-        <td>${fmtMoney(r.bonus)} <button class="icon-btn remove-inc" data-deal="${r.dealId}" data-type="joey">✕</button></td>
+        <td>${fmtMoney(r.m1)} <button class="icon-btn remove-inc" data-deal="${r.dealId}" data-type="joey_m1">✕</button></td>
+        <td>${fmtMoney(r.m2)} <button class="icon-btn remove-inc" data-deal="${r.dealId}" data-type="joey">✕</button></td>
+        <td>${fmtMoney(r.m1 + r.m2)}</td>
       </tr>
     `).join('');
 }
@@ -225,6 +227,36 @@ function candidatePanelHtml(candidates, type) {
           return row;
         }).join('')}
         <button class="btn small candidate-apply" data-type="rep" style="width:auto; margin-top:8px;">Apply</button>
+      </div>
+    `;
+  }
+
+  if (type === 'joey') {
+    // M1 and M2 halves are independent, same reasoning as closer/setter above — a deal's M1
+    // half might be due this cycle while M2 isn't approved yet, or vice versa.
+    return `
+      <div class="card" style="background:var(--brand-bg);">
+        ${candidates.map((c) => {
+          const inc = DATA.included[c.id] || {};
+          let row = `<div style="padding:6px 0; border-bottom:1px solid var(--brand-border);">
+            <div style="font-weight:600;">${c.customer_name} <span style="color:var(--brand-muted); font-weight:400; font-size:12px;">${c.customer_address || ''}</span></div>
+            <div style="display:flex; gap:16px; margin-top:4px;">`;
+          if (c.joey_m1_bonus > 0 && !c.joey_m1_paid) {
+            row += `<label style="display:flex; align-items:center; gap:6px; font-weight:400;">
+              <input type="checkbox" class="candidate-cb" data-deal="${c.id}" data-type="joey_m1" ${inc.include_joey_m1 ? 'checked' : ''} style="width:auto;">
+              M1 — ${fmtMoney(c.joey_m1_bonus)}
+            </label>`;
+          }
+          if (c.joey_m2_bonus > 0 && !c.joey_paid) {
+            row += `<label style="display:flex; align-items:center; gap:6px; font-weight:400;">
+              <input type="checkbox" class="candidate-cb" data-deal="${c.id}" data-type="joey" ${inc.include_joey ? 'checked' : ''} style="width:auto;">
+              M2 — ${fmtMoney(c.joey_m2_bonus)}
+            </label>`;
+          }
+          row += `</div></div>`;
+          return row;
+        }).join('')}
+        <button class="btn small candidate-apply" data-type="joey" style="width:auto; margin-top:8px;">Apply</button>
       </div>
     `;
   }

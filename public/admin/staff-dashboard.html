@@ -29,7 +29,7 @@ function rowLine(type, r) {
     return `<span>${r.customerName}</span><strong>M1 ${fmtMoney(r.m1)} · M2 ${fmtMoney(r.m2)}</strong>`;
   }
   if (type === 'pm') {
-    return `<span>${r.customerName} <span style="color:var(--brand-muted); font-size:12px;">Net PPW ${r.netPpw ?? '—'}</span></span><strong>${fmtMoney(r.bonus)}</strong>`;
+    return `<span>${r.customerName} <span style="color:var(--brand-muted); font-size:12px;">Net PPW ${r.netPpw ?? '—'}</span></span><strong>M1 ${fmtMoney(r.m1)} · M2 ${fmtMoney(r.m2)}</strong>`;
   }
   return `<span>${r.customerName} <span style="color:var(--brand-muted); font-size:12px;">${fmtDate(r.solarDate)} · ${r.kw} kW</span></span><strong>${fmtMoney(r.lineAmount)}</strong>`;
 }

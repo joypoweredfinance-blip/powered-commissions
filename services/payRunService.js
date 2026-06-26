@@ -85,9 +85,11 @@ async function getCandidates() {
     WHERE (owner_noy_m1_amount > 0 AND owner_noy_m1_paid = 0) OR (owner_noy_m2_amount > 0 AND owner_noy_m2_paid = 0)
     ORDER BY id DESC
   `);
+  // Joey's bonus is split 50/50 across M1 and M2, same shape as Etai/Noy's distribution —
+  // independently includable per milestone, not one combined flag.
   const joeyCandidates = await all(`
-    SELECT id, customer_name, customer_address, joey_m2_bonus, joey_paid, net_ppw
-    FROM deals WHERE joey_m2_bonus > 0 AND joey_paid = 0
+    SELECT id, customer_name, customer_address, joey_m1_bonus, joey_m1_paid, joey_m2_bonus, joey_paid, net_ppw
+    FROM deals WHERE (joey_m1_bonus > 0 AND joey_m1_paid = 0) OR (joey_m2_bonus > 0 AND joey_paid = 0)
     ORDER BY id DESC
   `);
   // Austin isn't paid per milestone like the owners/Joey — he's linked by Solar Date
@@ -119,7 +121,7 @@ async function getIncludedDeals(payRunId) {
            sr.full_name as setter_name, sr.display_name as setter_display,
            d.owner_etai_m1_amount, d.owner_etai_m2_amount, d.owner_etai_m1_paid, d.owner_etai_m1_paid_date, d.owner_etai_m2_paid, d.owner_etai_m2_paid_date,
            d.owner_noy_m1_amount, d.owner_noy_m2_amount, d.owner_noy_m1_paid, d.owner_noy_m1_paid_date, d.owner_noy_m2_paid, d.owner_noy_m2_paid_date,
-           d.joey_m2_bonus, d.joey_paid, d.joey_paid_date, d.net_ppw,
+           d.joey_m1_bonus, d.joey_m1_paid, d.joey_m1_paid_date, d.joey_m2_bonus, d.joey_paid, d.joey_paid_date, d.net_ppw,
            d.system_size_kw, d.install_completed_date as solar_date, d.austin_paid, d.austin_paid_date
     FROM pay_run_deals prd
     JOIN deals d ON d.id = prd.deal_id
@@ -201,15 +203,18 @@ async function getPayRun(id) {
   const etaiTotal = round2(etaiRows.reduce((s, r) => s + r.m1 + r.m2, 0) + etaiManual.reduce((s, a) => s + a.amount, 0));
   const noyTotal = round2(noyRows.reduce((s, r) => s + r.m1 + r.m2, 0) + noyManual.reduce((s, a) => s + a.amount, 0));
 
-  // Section 4 — Joey: per-deal M2 bonus + fixed weekly salary + any manual one-off amounts.
+  // Section 4 — Joey: per-deal bonus split 50/50 across M1 and M2 (same shape as Etai/Noy,
+  // independently includable per milestone) + fixed weekly salary + any manual one-offs.
   const joeyManual = manualByStaff(staffIds.joey);
   const joeyRows = includedDeals
-    .filter((d) => d.include_joey)
+    .filter((d) => d.include_joey_m1 || d.include_joey)
     .map((d) => ({
       dealId: d.deal_id, customerName: d.customer_name, customerAddress: d.customer_address,
-      bonus: paidElsewhere(d.joey_paid, d.joey_paid_date, payDate) ? 0 : (d.joey_m2_bonus || 0), netPpw: d.net_ppw
+      m1: d.include_joey_m1 && !paidElsewhere(d.joey_m1_paid, d.joey_m1_paid_date, payDate) ? (d.joey_m1_bonus || 0) : 0,
+      m2: d.include_joey && !paidElsewhere(d.joey_paid, d.joey_paid_date, payDate) ? (d.joey_m2_bonus || 0) : 0,
+      netPpw: d.net_ppw
     }));
-  const joeyBonusTotal = round2(joeyRows.reduce((s, r) => s + r.bonus, 0));
+  const joeyBonusTotal = round2(joeyRows.reduce((s, r) => s + r.m1 + r.m2, 0));
   const joeyWeeklySalary = settings.joey_weekly_salary || 0;
   const joeyManualTotal = round2(joeyManual.reduce((s, a) => s + a.amount, 0));
   const joeyTotal = round2(joeyBonusTotal + joeyWeeklySalary + joeyManualTotal);
@@ -268,7 +273,7 @@ async function getPayRun(id) {
 
 async function setDealInclusion(payRunId, dealId, flags, userId) {
   const existing = await get(`SELECT * FROM pay_run_deals WHERE pay_run_id = ? AND deal_id = ?`, [payRunId, dealId]);
-  const FIELDS = ['include_closer', 'include_setter', 'include_etai', 'include_noy', 'include_joey', 'include_austin'];
+  const FIELDS = ['include_closer', 'include_setter', 'include_etai', 'include_noy', 'include_joey_m1', 'include_joey', 'include_austin'];
   const merged = {};
   FIELDS.forEach((f) => {
     merged[f] = flags[f] !== undefined ? (flags[f] ? 1 : 0) : (existing ? existing[f] : 0);
@@ -344,7 +349,8 @@ async function finalizePayRun(payRunId, userId) {
     if (row.m2 > 0) await dealService.setPaymentFlag(row.dealId, 'owner_noy_m2', true, payDate, userId);
   }
   for (const row of data.sections.joey.rows) {
-    await dealService.setPaymentFlag(row.dealId, 'joey', true, payDate, userId);
+    if (row.m1 > 0) await dealService.setPaymentFlag(row.dealId, 'joey_m1', true, payDate, userId);
+    if (row.m2 > 0) await dealService.setPaymentFlag(row.dealId, 'joey', true, payDate, userId);
   }
   for (const row of data.sections.austin.rows) {
     await dealService.setPaymentFlag(row.dealId, 'austin', true, payDate, userId);

@@ -3,6 +3,7 @@ const NAV_ITEMS = [
   { href: '/admin/dashboard.html', label: '📊 Dashboard' },
   { section: 'Deals' },
   { href: '/admin/board.html', label: '📋 Deals Board' },
+  { href: '/admin/adders-report.html', label: '🧾 Adders Report' },
   { section: 'People' },
   { href: '/admin/reps.html', label: '🧑‍💼 Sales Reps' },
   { href: '/admin/payroll-staff.html', label: '🧾 Payroll Staff' },

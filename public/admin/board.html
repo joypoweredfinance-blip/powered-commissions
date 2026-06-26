@@ -182,7 +182,7 @@ async function loadDeals() {
       html += `<tr class="group-row"><td colspan="${COL_COUNT}">${d.status_label || 'No Status'}</td></tr>`;
       lastStatus = d.status_label;
     }
-    const staffPay = (d.owner_etai_total || 0) + (d.owner_noy_total || 0) + (d.joey_m2_bonus || 0);
+    const staffPay = (d.owner_etai_total || 0) + (d.owner_noy_total || 0) + (d.joey_m1_bonus || 0) + (d.joey_m2_bonus || 0);
     const totalAdders = d.total_adders || 0;
     const totalFundsReceived = (d.funds_received_m1 || 0) + (d.funds_received_m2 || 0);
     // POWERED Net = Total Funds Received less (Closer Pay + Setter Pay + Staff Pay) for this job.

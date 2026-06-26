@@ -1,7 +1,7 @@
 const { get, all } = require('../db/client');
 const { round2, computeEpcCost } = require('./commissionEngine');
 
-const ADDER_CATEGORY_LABELS = { mpu: 'MPU', battery: 'Battery', reroof_sow: 'Roof Work', permit: 'Permit', misc: 'Miscellaneous', other: 'Other' };
+const ADDER_CATEGORY_LABELS = { mpu: 'MPU', battery: 'Battery', reroof_sow: 'Roof Costs', permit: 'Permit', misc: 'Miscellaneous', other: 'Other' };
 
 function monthKey(dateStr) {
   if (!dateStr) return null;
@@ -56,7 +56,7 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
            d.closer_paid, d.closer_paid_date, d.setter_paid, d.setter_paid_date,
            d.closer_breakdown_approved, d.setter_breakdown_approved,
            d.m1_paid_date, d.net_ppw, d.system_size_kw, d.gross_amount, d.rep_pool,
-           d.owner_etai_total, d.owner_noy_total, d.joey_m2_bonus,
+           d.owner_etai_total, d.owner_noy_total, d.joey_m1_bonus, d.joey_m2_bonus,
            d.funds_received_m1, d.funds_received_m2
     FROM deals d
     WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}
@@ -84,7 +84,7 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
       // POWERED Net = Total Funds Received less (Closer Pay + Setter Pay + Staff Pay) for
       // that job — not Gross minus Rep Pool, which double-counted the installer's own EPC
       // split rather than reflecting cash actually in hand.
-      const staffPay = (d.owner_etai_total || 0) + (d.owner_noy_total || 0) + (d.joey_m2_bonus || 0);
+      const staffPay = (d.owner_etai_total || 0) + (d.owner_noy_total || 0) + (d.joey_m1_bonus || 0) + (d.joey_m2_bonus || 0);
       const totalFundsReceived = (d.funds_received_m1 || 0) + (d.funds_received_m2 || 0);
       periodPoweredNet.push(totalFundsReceived - ((d.closer_pay_net || 0) + (d.setter_pay || 0) + staffPay));
     }
@@ -122,6 +122,7 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
            d.owner_etai_m2_paid, d.owner_etai_m2_paid_date, d.owner_etai_m2_amount,
            d.owner_noy_m1_paid, d.owner_noy_m1_paid_date, d.owner_noy_m1_amount,
            d.owner_noy_m2_paid, d.owner_noy_m2_paid_date, d.owner_noy_m2_amount,
+           d.joey_m1_paid, d.joey_m1_paid_date, d.joey_m1_bonus,
            d.joey_paid, d.joey_paid_date, d.joey_m2_bonus,
            d.funds_received_m1, d.funds_received_m1_date, d.funds_received_m2, d.funds_received_m2_date,
            fin.name as financier_name
@@ -143,6 +144,9 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
     }
     if (r.owner_noy_m2_paid && r.owner_noy_m2_paid_date && (!hasPeriod || inRange(r.owner_noy_m2_paid_date, startDate, endDate))) {
       staffPay += r.owner_noy_m2_amount || 0;
+    }
+    if (r.joey_m1_paid && r.joey_m1_paid_date && (!hasPeriod || inRange(r.joey_m1_paid_date, startDate, endDate))) {
+      staffPay += r.joey_m1_bonus || 0;
     }
     if (r.joey_paid && r.joey_paid_date && (!hasPeriod || inRange(r.joey_paid_date, startDate, endDate))) {
       staffPay += r.joey_m2_bonus || 0;
@@ -185,6 +189,36 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
   }
   const totalAdders = Object.values(categoryTotals).reduce((s, v) => s + v, 0);
   const totalGross = round2(totalContractValue - totalEpcCost - totalAdders);
+
+  // Adders cost comparison BY INSTALLER, averaged per job (not raw totals) so an installer
+  // with more deals in the period doesn't just look "more expensive" by volume alone.
+  const installerJobRows = await all(
+    `SELECT d.id, inst.name as installer_name FROM deals d JOIN installers inst ON inst.id = d.installer_id WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}`,
+    fundingStatusArgs
+  );
+  const installerNameByDeal = {};
+  const jobCountByInstaller = {};
+  for (const r of installerJobRows) {
+    if (!pieMatchedIds.has(r.id)) continue;
+    installerNameByDeal[r.id] = r.installer_name;
+    jobCountByInstaller[r.installer_name] = (jobCountByInstaller[r.installer_name] || 0) + 1;
+  }
+  const installerCategoryTotals = {};
+  for (const a of adderRows) {
+    const installerName = installerNameByDeal[a.deal_id];
+    if (!installerName) continue;
+    installerCategoryTotals[installerName] = installerCategoryTotals[installerName] || {};
+    installerCategoryTotals[installerName][a.category] = (installerCategoryTotals[installerName][a.category] || 0) + (a.amount || 0);
+  }
+  const adderCategoryKeys = Object.keys(ADDER_CATEGORY_LABELS);
+  const installerAddersComparison = Object.keys(jobCountByInstaller).map((name) => {
+    const jobCount = jobCountByInstaller[name];
+    const totals = installerCategoryTotals[name] || {};
+    const perJobByCategory = {};
+    adderCategoryKeys.forEach((c) => { perJobByCategory[c] = jobCount ? round2((totals[c] || 0) / jobCount) : 0; });
+    return { installerName: name, jobCount, perJobByCategory };
+  }).sort((a, b) => b.jobCount - a.jobCount);
+
   const contractBreakdown = {
     totalContractValue: round2(totalContractValue),
     totalAdders: round2(totalAdders),
@@ -291,6 +325,7 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
     fundingStatus,
     fundsByFinancier, fundsByFinancierTotal,
     contractBreakdown,
+    installerAddersComparison,
     jobComparison, jobComparisonTruncated,
     pipeline,
     leaderboard,

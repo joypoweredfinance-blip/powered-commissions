@@ -88,6 +88,44 @@ function renderContractPieChart(canvasId, breakdown) {
   });
 }
 
+// Stacked bar, one bar per installer, segments = adder category — values are the AVERAGE per
+// job (not raw totals), so an installer with more deals in the period doesn't just look
+// "more expensive" purely from volume. This is the actual cost comparison Joy asked for.
+const INSTALLER_CHART_COLORS = ['#6B3FD4', '#1B5E45', '#B6760F', '#C9526B', '#3F7FB6', '#8A8DAA'];
+
+function renderInstallerAddersChart(canvasId, comparison, categoryLabels) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  const categories = Object.keys(categoryLabels);
+  return new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: comparison.map((c) => `${c.installerName} (${c.jobCount} job${c.jobCount === 1 ? '' : 's'})`),
+      datasets: categories.map((cat, i) => ({
+        label: categoryLabels[cat],
+        data: comparison.map((c) => c.perJobByCategory[cat] || 0),
+        backgroundColor: INSTALLER_CHART_COLORS[i % INSTALLER_CHART_COLORS.length],
+        borderRadius: 3
+      }))
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString()} avg/job`
+          }
+        }
+      },
+      scales: {
+        x: { stacked: true, grid: { display: false } },
+        y: { stacked: true, beginAtZero: true, ticks: { callback: (v) => '$' + v.toLocaleString() }, grid: { color: '#EFEDF6' } }
+      }
+    }
+  });
+}
+
 function renderFunnelChart(canvasId, pipeline) {
   const ctx = document.getElementById(canvasId).getContext('2d');
   return new Chart(ctx, {

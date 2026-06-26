@@ -19,6 +19,8 @@ let SELECTED_FUNDING_STATUSES = [];
 let DATE_RANGE = null; // { startDate, endDate } or null for All Time
 let chartInstance = null;
 let pieInstance = null;
+let installerAddersInstance = null;
+const ADDER_CATEGORY_LABELS = { mpu: 'MPU', battery: 'Battery', reroof_sow: 'Roof Costs', permit: 'Permit', misc: 'Miscellaneous', other: 'Other' };
 
 // Fixed, closed list — separate from the flexible CRM status list pulled from /api/meta.
 const FUNDING_STATUSES = [
@@ -71,6 +73,10 @@ document.getElementById('pageContent').innerHTML = `
       <div class="card" style="margin-bottom:20px;">
         <p class="section-title">Contract Value — Where It Goes</p>
         <div style="height:300px;"><canvas id="pieChart"></canvas></div>
+      </div>
+      <div class="card" style="margin-bottom:20px;">
+        <p class="section-title">Adders Cost by Installer <span style="font-weight:400; text-transform:none; font-size:12px;">(average per job)</span></p>
+        <div style="height:300px;"><canvas id="installerAddersChart"></canvas></div>
       </div>
       <div class="card">
         <p class="section-title">Pipeline by Status</p>
@@ -289,6 +295,8 @@ async function load() {
   renderFunnelChart('funnelChart', d.pipeline);
   if (pieInstance) pieInstance.destroy();
   pieInstance = d.contractBreakdown.slices.length === 0 ? null : renderContractPieChart('pieChart', d.contractBreakdown);
+  if (installerAddersInstance) installerAddersInstance.destroy();
+  installerAddersInstance = d.installerAddersComparison.length === 0 ? null : renderInstallerAddersChart('installerAddersChart', d.installerAddersComparison, ADDER_CATEGORY_LABELS);
 
   document.getElementById('leaderboard').innerHTML = d.leaderboard.length === 0
     ? '<p style="color:var(--brand-muted); font-size:13px;">No paid commissions yet.</p>'

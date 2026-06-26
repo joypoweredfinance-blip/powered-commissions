@@ -128,13 +128,23 @@ function calculateOwnerDistribution({ settings, m1Approved, m2Approved }) {
   };
 }
 
-// Joey's M2 bonus fires only once a deal reaches M2, tiered by the deal's Net PPW.
-function calculateJoeyM2Bonus({ netPPW, m2Approved, settings }) {
-  if (!m2Approved || netPPW === null) return 0;
+// The full per-job bonus, tiered by Net PPW — Joey is then paid half at M1 and half at M2
+// (see calculateJoeyBonus below), not the whole thing in one lump sum at M2.
+function lookupJoeyTierAmount(netPPW, settings) {
+  if (netPPW === null || netPPW === undefined) return 0;
   if (netPPW >= settings.joey_tier2_max) return settings.joey_tier3_amt;
   if (netPPW >= settings.joey_tier1_max) return settings.joey_tier2_amt;
   if (netPPW >= 3.15) return settings.joey_tier1_amt;
   return 0;
+}
+
+function calculateJoeyBonus({ netPPW, m1Approved, m2Approved, settings }) {
+  const tierAmount = lookupJoeyTierAmount(netPPW, settings);
+  const half = round2(tierAmount * 0.5);
+  return {
+    m1: m1Approved ? half : 0,
+    m2: m2Approved ? half : 0
+  };
 }
 
 // Austin's pay is company-wide per month, not per-deal.
@@ -158,7 +168,7 @@ module.exports = {
   lookupTierRate,
   calculateRepCommission,
   calculateOwnerDistribution,
-  calculateJoeyM2Bonus,
+  calculateJoeyBonus,
   calculateAustinPay,
   round2
 };

@@ -1,6 +1,6 @@
 const { run, get, all } = require('../db/client');
 const {
-  calculateRepCommission, calculateOwnerDistribution, calculateJoeyM2Bonus,
+  calculateRepCommission, calculateOwnerDistribution, calculateJoeyBonus,
   computeEpcCost, computeGross, computeExpectedFunding, sumAllAdders, round2
 } = require('./commissionEngine');
 const auditLog = require('./auditLog');
@@ -23,7 +23,7 @@ const COMPUTED_FIELDS = [
   'net_ppw', 'pay_scale_rate', 'rep_pool', 'closer_pay_gross', 'closer_pay_net', 'setter_pay',
   'owner_etai_total', 'owner_etai_m1_amount', 'owner_etai_m2_amount',
   'owner_noy_total', 'owner_noy_m1_amount', 'owner_noy_m2_amount',
-  'joey_m2_bonus', 'below_floor',
+  'joey_m1_bonus', 'joey_m2_bonus', 'below_floor',
   'gross_amount', 'expected_m1_amount', 'expected_m2_amount'
 ];
 
@@ -106,7 +106,13 @@ async function getDeal(id) {
   const adders = await all(`SELECT * FROM deal_adders WHERE deal_id = ? ORDER BY sort_order ASC, id ASC`, [id]);
   const advances = await all(`SELECT a.*, r.full_name as rep_name FROM advances a LEFT JOIN reps r ON r.id = a.rep_id WHERE a.deal_id = ?`, [id]);
   const clawbacks = await all(`SELECT c.*, r.full_name as rep_name FROM clawbacks c LEFT JOIN reps r ON r.id = c.rep_id WHERE c.deal_id = ?`, [id]);
-  return { ...deal, adders, advances, clawbacks };
+  // Attached here (not just on the dedicated GET /:id route) so every mutation — override,
+  // recalculate, payment, approve, adders — returns the full audit history too. Every one of
+  // those calls getDeal() and hands its result straight back to the frontend, which replaces
+  // its local DEAL object wholesale; if auditLog wasn't on it, the page's history list would
+  // go blank on every single action even though the rows were never touched in the database.
+  const auditLogEntries = await auditLog.getLogFor('deals', id);
+  return { ...deal, adders, advances, clawbacks, auditLog: auditLogEntries };
 }
 
 async function createDeal(data, userId) {
@@ -186,8 +192,9 @@ async function recalculate(id, userId, { force = false } = {}) {
     m1Approved: !!deal.m1_approved_date,
     m2Approved: !!deal.m2_approved_date
   });
-  const joeyBonus = calculateJoeyM2Bonus({
+  const joeyBonus = calculateJoeyBonus({
     netPPW: result.netPPW,
+    m1Approved: !!deal.m1_approved_date,
     m2Approved: !!deal.m2_approved_date,
     settings
   });
@@ -210,7 +217,8 @@ async function recalculate(id, userId, { force = false } = {}) {
     owner_noy_total: owner.noyTotal,
     owner_noy_m1_amount: owner.noyM1,
     owner_noy_m2_amount: owner.noyM2,
-    joey_m2_bonus: joeyBonus,
+    joey_m1_bonus: joeyBonus.m1,
+    joey_m2_bonus: joeyBonus.m2,
     below_floor: result.belowFloor ? 1 : 0,
     gross_amount: gross,
     expected_m1_amount: expectedM1,
@@ -292,6 +300,7 @@ async function setPaymentFlag(dealId, recipient, paid, date, userId) {
     owner_etai_m2: ['owner_etai_m2_paid', 'owner_etai_m2_paid_date'],
     owner_noy_m1: ['owner_noy_m1_paid', 'owner_noy_m1_paid_date'],
     owner_noy_m2: ['owner_noy_m2_paid', 'owner_noy_m2_paid_date'],
+    joey_m1: ['joey_m1_paid', 'joey_m1_paid_date'],
     joey: ['joey_paid', 'joey_paid_date'],
     austin: ['austin_paid', 'austin_paid_date']
   };

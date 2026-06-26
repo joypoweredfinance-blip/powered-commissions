@@ -41,13 +41,17 @@ const COLUMN_MIGRATIONS = [
   { table: 'payroll_staff', column: 'account_info', definition: 'TEXT' },
   { table: 'pay_run_deals', column: 'include_austin', definition: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'pay_run_deals', column: 'austin_kw_override', definition: 'REAL' },
+  { table: 'pay_run_deals', column: 'include_joey_m1', definition: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'pay_run_adhoc', column: 'rep_id', definition: 'INTEGER REFERENCES reps(id)' },
   { table: 'pay_run_adhoc', column: 'staff_id', definition: 'INTEGER REFERENCES payroll_staff(id)' },
   { table: 'deals', column: 'funds_pending_m1', definition: 'REAL' },
   { table: 'deals', column: 'funds_pending_m2', definition: 'REAL' },
   { table: 'deals', column: 'funding_status', definition: 'TEXT' },
   { table: 'deals', column: 'funding_status_override', definition: 'TEXT' },
-  { table: 'deals', column: 'field_override_reasons', definition: "TEXT NOT NULL DEFAULT '{}'" }
+  { table: 'deals', column: 'field_override_reasons', definition: "TEXT NOT NULL DEFAULT '{}'" },
+  { table: 'deals', column: 'joey_m1_bonus', definition: 'REAL' },
+  { table: 'deals', column: 'joey_m1_paid', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'deals', column: 'joey_m1_paid_date', definition: 'TEXT' }
 ];
 
 async function columnExists(table, column) {

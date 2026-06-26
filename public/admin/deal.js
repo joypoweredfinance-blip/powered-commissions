@@ -567,7 +567,8 @@ function renderPayment() {
   html += editableAmountRow('Etai — M2', 'owner_etai_m2', d.owner_etai_m2_paid, d.owner_etai_m2_amount, d.owner_etai_m2_paid_date, 'owner_etai_m2_amount', fieldOverrideReason(d, 'owner_etai_m2_amount'));
   html += editableAmountRow('Noy — M1', 'owner_noy_m1', d.owner_noy_m1_paid, d.owner_noy_m1_amount, d.owner_noy_m1_paid_date, 'owner_noy_m1_amount', fieldOverrideReason(d, 'owner_noy_m1_amount'));
   html += editableAmountRow('Noy — M2', 'owner_noy_m2', d.owner_noy_m2_paid, d.owner_noy_m2_amount, d.owner_noy_m2_paid_date, 'owner_noy_m2_amount', fieldOverrideReason(d, 'owner_noy_m2_amount'));
-  html += editableAmountRow("Joey's Bonus", 'joey', d.joey_paid, d.joey_m2_bonus, d.joey_paid_date, 'joey_m2_bonus', fieldOverrideReason(d, 'joey_m2_bonus'));
+  html += editableAmountRow("Joey's Bonus — M1", 'joey_m1', d.joey_m1_paid, d.joey_m1_bonus, d.joey_m1_paid_date, 'joey_m1_bonus', fieldOverrideReason(d, 'joey_m1_bonus'));
+  html += editableAmountRow("Joey's Bonus — M2", 'joey', d.joey_paid, d.joey_m2_bonus, d.joey_paid_date, 'joey_m2_bonus', fieldOverrideReason(d, 'joey_m2_bonus'));
   document.getElementById('paymentBox').innerHTML = html;
 
   async function sendPayment(recipient, paid, date) {

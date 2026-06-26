@@ -23,7 +23,7 @@ function staffRowLine(type, r) {
     return `<span class="lbl">${r.customerName}</span><span class="val">M1 ${fmtMoney(r.m1)} · M2 ${fmtMoney(r.m2)}</span>`;
   }
   if (type === 'pm') {
-    return `<span class="lbl">${r.customerName} <span style="color:var(--brand-muted); font-size:11px;">PPW ${r.netPpw ?? '—'}</span></span><span class="val">${fmtMoney(r.bonus)}</span>`;
+    return `<span class="lbl">${r.customerName} <span style="color:var(--brand-muted); font-size:11px;">PPW ${r.netPpw ?? '—'}</span></span><span class="val">M1 ${fmtMoney(r.m1)} · M2 ${fmtMoney(r.m2)}</span>`;
   }
   return `<span class="lbl">${r.customerName} <span style="color:var(--brand-muted); font-size:11px;">${fmtDate(r.solarDate)} · ${r.kw} kW</span></span><span class="val">${fmtMoney(r.lineAmount)}</span>`;
 }

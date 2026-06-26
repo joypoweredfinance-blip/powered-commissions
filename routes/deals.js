@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const dealService = require('../services/dealService');
-const auditLog = require('../services/auditLog');
+const addersReportService = require('../services/addersReportService');
 
 router.get('/', async (req, res) => {
   try {
@@ -13,12 +13,22 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Registered before /:id so "reports" is never swallowed as a deal id.
+router.get('/reports/adders', async (req, res) => {
+  try {
+    const { statusId, statusIds, fundingStatuses, repId, installerId, search, phase, startDate, endDate } = req.query;
+    const report = await addersReportService.getAddersReport({ statusId, statusIds, fundingStatuses, repId, installerId, search, phase, startDate, endDate });
+    res.json(report);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   try {
     const deal = await dealService.getDeal(req.params.id);
     if (!deal) return res.status(404).json({ error: 'Deal not found' });
-    const log = await auditLog.getLogFor('deals', req.params.id);
-    res.json({ ...deal, auditLog: log });
+    res.json(deal);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

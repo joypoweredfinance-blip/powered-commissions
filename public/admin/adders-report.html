@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Adders Report — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+<script src="/admin/admin-common.js"></script>
+<script>renderAdminShell('/admin/adders-report.html', 'Adders Report');</script>
+<script>
+document.getElementById('pageContent').classList.add('full-bleed');
+
+const FUNDING_STATUSES = [
+  'M1 Pending', 'M1 Approved - Awaiting Funding', 'M1 Rejected',
+  'M2 Pending', 'M2 Approved - Awaiting Funding', 'M2 Rejected Clawback',
+  'M1 Funded', 'M1+M2 Funded'
+];
+const FIXED_CATEGORY_LABELS = { reroof_sow: 'Roof Costs', battery: 'Battery', permit: 'Permit', mpu: 'MPU', other: 'Other' };
+let SELECTED_STATUS_IDS = [];
+let SELECTED_FUNDING_STATUSES = [];
+let DATE_RANGE = null;
+
+document.getElementById('pageContent').innerHTML = `
+  <div class="filter-grid" style="margin-bottom:14px;">
+    <div class="card filter-card">
+      <div style="font-size:12px; font-weight:700; color:var(--brand-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Filter by Date Signed</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <input type="date" id="rangeStart" style="margin:0;">
+        <span style="color:var(--brand-muted);">to</span>
+        <input type="date" id="rangeEnd" style="margin:0;">
+        <button class="btn small" id="dateApplyBtn" style="width:auto;">Apply</button>
+        <button class="btn secondary small" id="dateClearBtn" style="width:auto;">Clear</button>
+      </div>
+    </div>
+    <div class="card filter-card status-filter-wrap" style="position:relative;">
+      <div style="font-size:12px; font-weight:700; color:var(--brand-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Filter by CRM Status</div>
+      <button class="btn secondary small" id="statusFilterBtn" style="width:auto;">Filter by CRM Status ▾</button>
+      <span id="statusSummary" style="font-size:12px; color:var(--brand-muted); margin-left:10px;"></span>
+      <div class="status-filter-panel" id="statusFilterPanel" style="display:none;"></div>
+    </div>
+    <div class="card filter-card funding-filter-wrap" style="position:relative;">
+      <div style="font-size:12px; font-weight:700; color:var(--brand-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Filter by Funding Status</div>
+      <button class="btn secondary small" id="fundingFilterBtn" style="width:auto;">Filter by Funding Status ▾</button>
+      <span id="fundingSummary" style="font-size:12px; color:var(--brand-muted); margin-left:10px;"></span>
+      <div class="status-filter-panel" id="fundingFilterPanel" style="display:none;"></div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <input type="text" id="searchInput" placeholder="Search customer or address…">
+    <select id="repFilter"><option value="">All reps</option></select>
+    <select id="installerFilter"><option value="">All installers</option></select>
+  </div>
+
+  <div class="card" style="overflow-x:auto;">
+    <table class="data-table" id="reportTable">
+      <thead><tr id="reportHeaderRow"></tr></thead>
+      <tbody id="reportBody"><tr><td style="text-align:center; color:var(--brand-muted); padding:30px;">Loading…</td></tr></tbody>
+      <tfoot id="reportFoot"></tfoot>
+    </table>
+  </div>
+
+  <div class="card filter-card" style="margin-top:14px; max-width:420px;">
+    <div style="font-size:12px; font-weight:700; color:var(--brand-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Filters Applied</div>
+    <div id="filtersAppliedSummary" style="font-size:13px; color:var(--brand-muted);">None — showing all deals.</div>
+  </div>
+`;
+
+function statusPanelHtml(options, cbClass) {
+  return `
+    ${options}
+    <div class="actions">
+      <button class="btn secondary small panel-select-all" data-cb="${cbClass}" style="width:auto;">All</button>
+      <button class="btn secondary small panel-clear-all" data-cb="${cbClass}" style="width:auto;">Clear</button>
+      <button class="btn small panel-apply" data-cb="${cbClass}" style="width:auto; margin-left:auto;">Apply</button>
+    </div>
+  `;
+}
+
+let META = { reps: [], installers: [], statuses: [] };
+
+async function loadMeta() {
+  META = await api('GET', '/api/meta');
+  const repFilter = document.getElementById('repFilter');
+  META.reps.forEach((r) => repFilter.insertAdjacentHTML('beforeend', `<option value="${r.id}">${r.display_name || r.full_name}</option>`));
+  const installerFilter = document.getElementById('installerFilter');
+  META.installers.forEach((i) => installerFilter.insertAdjacentHTML('beforeend', `<option value="${i.id}">${i.name}</option>`));
+
+  document.getElementById('statusFilterPanel').innerHTML = statusPanelHtml(
+    META.statuses.map((s) => `<label><input type="checkbox" class="status-cb" value="${s.id}"> ${s.label}</label>`).join(''), 'status-cb'
+  );
+  document.getElementById('fundingFilterPanel').innerHTML = statusPanelHtml(
+    FUNDING_STATUSES.map((s) => `<label><input type="checkbox" class="funding-cb" value="${s}"> ${s}</label>`).join(''), 'funding-cb'
+  );
+
+  document.getElementById('statusFilterBtn').addEventListener('click', () => {
+    const p = document.getElementById('statusFilterPanel'); p.style.display = p.style.display === 'none' ? 'block' : 'none';
+  });
+  document.getElementById('fundingFilterBtn').addEventListener('click', () => {
+    const p = document.getElementById('fundingFilterPanel'); p.style.display = p.style.display === 'none' ? 'block' : 'none';
+  });
+  document.querySelectorAll('.panel-select-all').forEach((btn) => btn.addEventListener('click', () => {
+    document.querySelectorAll(`.${btn.dataset.cb}`).forEach((cb) => { cb.checked = true; });
+  }));
+  document.querySelectorAll('.panel-clear-all').forEach((btn) => btn.addEventListener('click', () => {
+    document.querySelectorAll(`.${btn.dataset.cb}`).forEach((cb) => { cb.checked = false; });
+  }));
+  document.querySelectorAll('.panel-apply').forEach((btn) => btn.addEventListener('click', () => {
+    if (btn.dataset.cb === 'status-cb') {
+      SELECTED_STATUS_IDS = [...document.querySelectorAll('.status-cb:checked')].map((cb) => cb.value);
+      document.getElementById('statusSummary').textContent = SELECTED_STATUS_IDS.length ? `${SELECTED_STATUS_IDS.length} selected` : '';
+      document.getElementById('statusFilterPanel').style.display = 'none';
+    } else {
+      SELECTED_FUNDING_STATUSES = [...document.querySelectorAll('.funding-cb:checked')].map((cb) => cb.value);
+      document.getElementById('fundingSummary').textContent = SELECTED_FUNDING_STATUSES.length ? `${SELECTED_FUNDING_STATUSES.length} selected` : '';
+      document.getElementById('fundingFilterPanel').style.display = 'none';
+    }
+    loadReport();
+  }));
+  document.addEventListener('click', (e) => {
+    const w1 = document.querySelector('.status-filter-wrap');
+    if (w1 && !w1.contains(e.target)) document.getElementById('statusFilterPanel').style.display = 'none';
+    const w2 = document.querySelector('.funding-filter-wrap');
+    if (w2 && !w2.contains(e.target)) document.getElementById('fundingFilterPanel').style.display = 'none';
+  });
+}
+
+function updateFiltersAppliedSummary() {
+  const bits = [];
+  if (DATE_RANGE) bits.push(`Date Signed ${DATE_RANGE.startDate} to ${DATE_RANGE.endDate}`);
+  if (SELECTED_STATUS_IDS.length) bits.push(`${SELECTED_STATUS_IDS.length} CRM status(es)`);
+  if (SELECTED_FUNDING_STATUSES.length) bits.push(`${SELECTED_FUNDING_STATUSES.length} funding status(es)`);
+  const rep = document.getElementById('repFilter').value;
+  if (rep) bits.push('Rep filter');
+  const inst = document.getElementById('installerFilter').value;
+  if (inst) bits.push('Installer filter');
+  const search = document.getElementById('searchInput').value.trim();
+  if (search) bits.push(`Search "${search}"`);
+  document.getElementById('filtersAppliedSummary').textContent = bits.length ? bits.join(' · ') : 'None — showing all deals.';
+}
+
+async function loadReport() {
+  const params = new URLSearchParams();
+  const search = document.getElementById('searchInput').value.trim();
+  const repId = document.getElementById('repFilter').value;
+  const installerId = document.getElementById('installerFilter').value;
+  if (search) params.set('search', search);
+  if (repId) params.set('repId', repId);
+  if (installerId) params.set('installerId', installerId);
+  SELECTED_STATUS_IDS.forEach((id) => params.append('statusIds', id));
+  SELECTED_FUNDING_STATUSES.forEach((s) => params.append('fundingStatuses', s));
+  if (DATE_RANGE) { params.set('startDate', DATE_RANGE.startDate); params.set('endDate', DATE_RANGE.endDate); }
+  updateFiltersAppliedSummary();
+
+  const report = await api('GET', `/api/deals/reports/adders?${params.toString()}`);
+  const categoryCols = Object.keys(FIXED_CATEGORY_LABELS);
+
+  document.getElementById('reportHeaderRow').innerHTML = `
+    <th>Customer Name</th><th>Customer Address</th><th class="col-compact">Installer</th><th class="col-compact">Financier</th>
+    <th>Contract Value</th><th>EPC Cost</th>
+    ${categoryCols.map((c) => `<th>${FIXED_CATEGORY_LABELS[c]}</th>`).join('')}
+    ${report.miscLabels.map((l) => `<th>${l}</th>`).join('')}
+    <th>Misc Total</th><th>Total Adders</th>
+  `;
+
+  if (report.rows.length === 0) {
+    const colCount = 8 + categoryCols.length + report.miscLabels.length;
+    document.getElementById('reportBody').innerHTML = `<tr><td colspan="${colCount}" style="text-align:center; color:var(--brand-muted); padding:30px;">No deals match these filters.</td></tr>`;
+    document.getElementById('reportFoot').innerHTML = '';
+    return;
+  }
+
+  document.getElementById('reportBody').innerHTML = report.rows.map((r) => {
+    const totalAdders = categoryCols.reduce((s, c) => s + r.categoryTotals[c], 0) + r.miscTotal;
+    return `
+      <tr>
+        <td><strong>${r.customerName}</strong></td>
+        <td>${r.customerAddress || '—'}</td>
+        <td class="col-compact">${r.installerName || '—'}</td>
+        <td class="col-compact">${r.financierName || '—'}</td>
+        <td>${fmtMoney(r.contractValue)}</td>
+        <td>${fmtMoney(r.epcCost)}</td>
+        ${categoryCols.map((c) => `<td>${fmtMoney(r.categoryTotals[c])}</td>`).join('')}
+        ${report.miscLabels.map((l) => `<td>${fmtMoney(r.miscByLabel[l])}</td>`).join('')}
+        <td>${fmtMoney(r.miscTotal)}</td>
+        <td><strong>${fmtMoney(totalAdders)}</strong></td>
+      </tr>
+    `;
+  }).join('');
+
+  const totalsRow = report.totals;
+  const grandTotalAdders = categoryCols.reduce((s, c) => s + totalsRow.categoryTotals[c], 0) + totalsRow.miscTotal;
+  document.getElementById('reportFoot').innerHTML = `
+    <tr style="font-weight:700; background:var(--brand-bg);">
+      <td colspan="4">Totals (${report.rows.length} job${report.rows.length === 1 ? '' : 's'})</td>
+      <td>${fmtMoney(totalsRow.contractValue)}</td>
+      <td>${fmtMoney(totalsRow.epcCost)}</td>
+      ${categoryCols.map((c) => `<td>${fmtMoney(totalsRow.categoryTotals[c])}</td>`).join('')}
+      ${report.miscLabels.map((l) => `<td>${fmtMoney(totalsRow.miscByLabel[l])}</td>`).join('')}
+      <td>${fmtMoney(totalsRow.miscTotal)}</td>
+      <td>${fmtMoney(grandTotalAdders)}</td>
+    </tr>
+  `;
+}
+
+document.getElementById('searchInput').addEventListener('input', () => { clearTimeout(window._t); window._t = setTimeout(loadReport, 250); });
+document.getElementById('repFilter').addEventListener('change', loadReport);
+document.getElementById('installerFilter').addEventListener('change', loadReport);
+document.getElementById('dateApplyBtn').addEventListener('click', () => {
+  const start = document.getElementById('rangeStart').value;
+  const end = document.getElementById('rangeEnd').value;
+  DATE_RANGE = (start && end) ? { startDate: start, endDate: end } : null;
+  loadReport();
+});
+document.getElementById('dateClearBtn').addEventListener('click', () => {
+  document.getElementById('rangeStart').value = '';
+  document.getElementById('rangeEnd').value = '';
+  DATE_RANGE = null;
+  loadReport();
+});
+
+Promise.all([loadMeta(), loadReport()]);
+</script>
+</body>
+</html>
