@@ -30,6 +30,9 @@ const FUNDING_STATUSES = [
 ];
 
 document.getElementById('pageContent').innerHTML = `
+  <div style="display:flex; justify-content:flex-end; margin-bottom:10px;">
+    <button class="btn secondary small" id="exportPdfBtn" style="width:auto;">Export PDF</button>
+  </div>
   <div class="filter-grid" style="margin-bottom:18px;">
     <div class="card filter-card">
       <div style="font-size:12px; font-weight:700; color:var(--brand-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">Filter by Solar Date</div>
@@ -322,6 +325,8 @@ async function load() {
 
 // load() doesn't read anything loadStatuses() sets up, so run both at once instead of
 // waiting on one before starting the other.
+document.getElementById('exportPdfBtn').addEventListener('click', () => { window.print(); });
+
 Promise.all([loadStatuses(), load()]);
 </script>
 </body>

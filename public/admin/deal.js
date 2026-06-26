@@ -219,10 +219,6 @@ function renderFull() {
           </div>
         </div>
 
-        <div class="card">
-          <p class="section-title">Admin Notes <span style="font-weight:400; text-transform:none;">(never visible to reps)</span></p>
-          <textarea id="f_admin_notes" rows="4"></textarea>
-        </div>
       </div>
 
       <div>
@@ -268,6 +264,11 @@ function renderFull() {
         <div class="card" style="margin-bottom:20px;">
           <p class="section-title">Payment Status</p>
           <div id="paymentBox"></div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px;">
+          <p class="section-title">Admin Notes <span style="font-weight:400; text-transform:none;">(never visible to reps)</span></p>
+          <textarea id="f_admin_notes" rows="4"></textarea>
         </div>
 
         <div class="card">

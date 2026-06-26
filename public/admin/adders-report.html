@@ -22,6 +22,7 @@ const FIXED_CATEGORY_LABELS = { reroof_sow: 'Roof Costs', battery: 'Battery', pe
 let SELECTED_STATUS_IDS = [];
 let SELECTED_FUNDING_STATUSES = [];
 let DATE_RANGE = null;
+let LAST_REPORT = null;
 
 document.getElementById('pageContent').innerHTML = `
   <div class="filter-grid" style="margin-bottom:14px;">
@@ -53,6 +54,7 @@ document.getElementById('pageContent').innerHTML = `
     <input type="text" id="searchInput" placeholder="Search customer or address…">
     <select id="repFilter"><option value="">All reps</option></select>
     <select id="installerFilter"><option value="">All installers</option></select>
+    <button class="btn secondary small" id="exportCsvBtn" style="width:auto; margin-left:auto;">Export CSV</button>
   </div>
 
   <div class="card" style="overflow-x:auto;">
@@ -156,6 +158,7 @@ async function loadReport() {
   updateFiltersAppliedSummary();
 
   const report = await api('GET', `/api/deals/reports/adders?${params.toString()}`);
+  LAST_REPORT = report;
   const categoryCols = Object.keys(FIXED_CATEGORY_LABELS);
 
   document.getElementById('reportHeaderRow').innerHTML = `
@@ -220,6 +223,28 @@ document.getElementById('dateClearBtn').addEventListener('click', () => {
   document.getElementById('rangeEnd').value = '';
   DATE_RANGE = null;
   loadReport();
+});
+
+document.getElementById('exportCsvBtn').addEventListener('click', () => {
+  if (!LAST_REPORT) return;
+  const categoryCols = Object.keys(FIXED_CATEGORY_LABELS);
+  const headers = [
+    'Customer Name', 'Customer Address', 'Installer', 'Financier', 'Contract Value', 'EPC Cost',
+    ...categoryCols.map((c) => FIXED_CATEGORY_LABELS[c]),
+    ...LAST_REPORT.miscLabels,
+    'Misc Total', 'Total Adders'
+  ];
+  const rows = LAST_REPORT.rows.map((r) => {
+    const totalAdders = categoryCols.reduce((s, c) => s + r.categoryTotals[c], 0) + r.miscTotal;
+    return [
+      r.customerName, r.customerAddress || '', r.installerName || '', r.financierName || '',
+      r.contractValue ?? 0, r.epcCost ?? 0,
+      ...categoryCols.map((c) => r.categoryTotals[c] ?? 0),
+      ...LAST_REPORT.miscLabels.map((l) => r.miscByLabel[l] ?? 0),
+      r.miscTotal ?? 0, totalAdders
+    ];
+  });
+  downloadCsv(`adders-report-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
 });
 
 Promise.all([loadMeta(), loadReport()]);

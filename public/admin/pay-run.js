@@ -101,6 +101,8 @@ function render() {
     </div>
 
     <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:10px;">
+      <button class="btn secondary small" id="exportCsvBtn" style="width:auto;">Export CSV</button>
+      <button class="btn secondary small" id="exportPdfBtn" style="width:auto;">Export PDF</button>
       <button class="btn secondary small" id="backBtn" style="width:auto;">Back to Pay Runs</button>
       <button class="btn small" id="finalizeBtn" style="width:auto;">Finalize — Mark All Paid</button>
     </div>
@@ -402,6 +404,54 @@ function wireEvents() {
   });
 
   document.getElementById('backBtn').addEventListener('click', () => { window.location.href = '/admin/pay-runs.html'; });
+
+  document.getElementById('exportPdfBtn').addEventListener('click', () => { window.print(); });
+  document.getElementById('exportCsvBtn').addEventListener('click', exportPayRunCsv);
+}
+
+function round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
+
+function exportPayRunCsv() {
+  const d = DATA;
+  const headers = ['Section', 'Recipient', 'Customer', 'Customer Address', 'Detail', 'M1', 'M2', 'Total'];
+  const rows = [];
+
+  d.sections.rep.rows.forEach((r) => {
+    rows.push(['Rep Commissions', r.repName, r.customerName, r.customerAddress || '', r.role, '', '', r.netPayable]);
+  });
+  (d.sections.rep.adhoc || []).forEach((a) => {
+    rows.push(['Rep Commissions', a.recipient_name, '', '', `Flat pay${a.notes ? ' — ' + a.notes : ''}`, '', '', a.amount]);
+  });
+  rows.push(['Rep Commissions', '', '', '', 'SECTION TOTAL', '', '', d.sections.rep.total]);
+
+  d.sections.noy.rows.forEach((r) => {
+    rows.push(['Distribution — Noy', 'Noy', r.customerName, r.customerAddress || '', '', r.m1, r.m2, round2(r.m1 + r.m2)]);
+  });
+  rows.push(['Distribution — Noy', '', '', '', 'SECTION TOTAL', '', '', d.sections.noy.total]);
+
+  d.sections.etai.rows.forEach((r) => {
+    rows.push(['Distribution — Etai', 'Etai', r.customerName, r.customerAddress || '', '', r.m1, r.m2, round2(r.m1 + r.m2)]);
+  });
+  rows.push(['Distribution — Etai', '', '', '', 'SECTION TOTAL', '', '', d.sections.etai.total]);
+
+  d.sections.joey.rows.forEach((r) => {
+    rows.push(['Joey — Weekly Pay & Bonus', 'Joey', r.customerName, r.customerAddress || '', `Net PPW: ${r.netPpw ?? '—'}`, r.m1, r.m2, round2(r.m1 + r.m2)]);
+  });
+  rows.push(['Joey — Weekly Pay & Bonus', 'Joey', '', '', 'Weekly Salary (Fixed)', '', '', d.sections.joey.weeklySalary]);
+  rows.push(['Joey — Weekly Pay & Bonus', '', '', '', 'SECTION TOTAL', '', '', d.sections.joey.total]);
+
+  d.sections.austin.rows.forEach((r) => {
+    rows.push(['Austin', 'Austin', r.customerName, r.customerAddress || '', `Solar Date: ${r.solarDate || '—'}, kW: ${r.kw}`, '', '', r.lineAmount]);
+  });
+  rows.push(['Austin', 'Austin', '', '', `Base $${d.sections.austin.base} vs. top-up`, '', '', d.sections.austin.topUp]);
+  rows.push(['Austin', '', '', '', 'SECTION TOTAL', '', '', d.sections.austin.total]);
+
+  d.summaryByRecipient.forEach((r) => {
+    rows.push(['Summary', r.name, '', '', '', '', '', r.total]);
+  });
+  rows.push(['Summary', '', '', '', 'GRAND TOTAL', '', '', d.grandTotal]);
+
+  downloadCsv(`pay-run-${d.payRun.pay_period_date}.csv`, headers, rows);
 }
 
 function wireCandidatePanel(panel) {

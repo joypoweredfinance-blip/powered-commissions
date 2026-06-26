@@ -161,3 +161,18 @@ table.data-table th.col-compact, table.data-table td.col-compact { font-size: 12
   table.data-table { font-size: 12.5px; }
   .kpi-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 }
+
+/* "Export PDF" buttons just call window.print() — this is what makes the result look like a
+   clean report instead of a screenshot of the whole app shell. */
+@media print {
+  .sidebar, .sidebar-backdrop, .menu-toggle, .user-chip, .filter-grid, button, .no-print { display: none !important; }
+  .app-shell { display: block; }
+  .page-content { padding: 0; max-width: none; }
+  .topbar { border-bottom: 2px solid #000; }
+  .card { box-shadow: none; border: 1px solid #ccc; break-inside: avoid; }
+  .detail-grid { display: block; }
+  .detail-grid > div { width: 100%; }
+  /* Scrollable lists (Recent Activity, Audit History, etc.) need to show everything on paper
+     instead of clipping to whatever height fit on screen. */
+  [style*="overflow-y"] { max-height: none !important; overflow: visible !important; }
+}

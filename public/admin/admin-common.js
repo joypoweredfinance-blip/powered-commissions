@@ -96,6 +96,27 @@ function fmtDate(d) {
   } catch (e) { return d; }
 }
 
+// headers: array of column names. rows: array of arrays, same column order as headers.
+// Values are coerced to strings and CSV-escaped (quoted whenever they contain a comma, quote,
+// or newline) — this is the one shared place that escaping happens, so every export page gets
+// it right instead of each one rolling its own.
+function downloadCsv(filename, headers, rows) {
+  const escapeCell = (v) => {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [headers.map(escapeCell).join(','), ...rows.map((r) => r.map(escapeCell).join(','))];
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 async function api(method, url, body) {
   const res = await fetch(url, {
     method,

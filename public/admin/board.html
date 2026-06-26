@@ -22,6 +22,7 @@ const FUNDING_STATUSES = [
 let SELECTED_BOARD_STATUS_IDS = [];
 let SELECTED_BOARD_FUNDING_STATUSES = [];
 let BOARD_DATE_RANGE = null;
+let LAST_DEALS = [];
 
 document.getElementById('pageContent').innerHTML = `
   <div class="filter-grid" style="margin-bottom:14px;">
@@ -63,7 +64,8 @@ document.getElementById('pageContent').innerHTML = `
       <option value="post_install">Post-install</option>
       <option value="closed">Closed</option>
     </select>
-    <button class="btn small" id="newDealBtn" style="width:auto; margin-left:auto;">+ New Deal</button>
+    <button class="btn secondary small" id="exportCsvBtn" style="width:auto; margin-left:auto;">Export CSV</button>
+    <button class="btn small" id="newDealBtn" style="width:auto;">+ New Deal</button>
   </div>
   <div class="card" style="overflow-x:auto;">
     <table class="data-table" id="dealsTable">
@@ -236,6 +238,7 @@ async function loadDeals() {
   }
 
   const deals = await api('GET', `/api/deals?${params.toString()}`);
+  LAST_DEALS = deals;
   const tbody = document.getElementById('dealsBody');
   if (deals.length === 0) {
     tbody.innerHTML = `<tr><td colspan="${COL_COUNT}" style="text-align:center; color:var(--brand-muted); padding:30px;">No deals match these filters.</td></tr>`;
@@ -300,6 +303,40 @@ document.getElementById('repFilter').addEventListener('change', loadDeals);
 document.getElementById('installerFilter').addEventListener('change', loadDeals);
 document.getElementById('phaseFilter').addEventListener('change', loadDeals);
 document.getElementById('newDealBtn').addEventListener('click', () => { window.location.href = '/admin/deal.html'; });
+
+// Exports exactly the rows currently on screen (same filters applied) — raw numbers, not
+// formatted dollar strings, so the figures can be summed directly in Excel.
+document.getElementById('exportCsvBtn').addEventListener('click', () => {
+  const headers = [
+    'Customer', 'Address', 'Installer', 'Financier', 'Closer', 'Setter', 'Solar Date', 'CRM Status',
+    'System Size (kW)', 'Contract Value', 'EPC Cost', 'Total Adders', 'Gross', 'Net PPW', 'Rep Pool',
+    'Closer Pay', 'Setter Pay', 'Staff Pay', 'Funds Pending M1', 'Funds Pending M2', 'Total Funds Pending',
+    'Funds Received M1', 'Funds Received M2', 'Total Funds Received', 'POWERED Net',
+    'Closer Approved', 'Setter Approved'
+  ];
+  const rows = LAST_DEALS.map((d) => {
+    const staffPay = round2((d.owner_etai_total || 0) + (d.owner_noy_total || 0) + (d.joey_m1_bonus || 0) + (d.joey_m2_bonus || 0));
+    const totalAdders = d.total_adders || 0;
+    const totalFundsReceived = round2((d.funds_received_m1 || 0) + (d.funds_received_m2 || 0));
+    const poweredNet = round2(totalFundsReceived - ((d.closer_pay_net || 0) + (d.setter_pay || 0) + staffPay));
+    const fundsPendingM1 = d.funds_pending_m1 ?? 0;
+    const fundsPendingM2 = d.funds_pending_m2 ?? 0;
+    return [
+      d.customer_name, d.customer_address || '', d.installer_name || '', d.financier_name || '',
+      d.closer_display || d.closer_name || '', d.setter_display || d.setter_name || '',
+      (d.install_completed_date || '').slice(0, 10), d.status_label || '',
+      d.system_size_kw ?? '', d.contract_value ?? 0, d.epc_cost ?? 0, totalAdders,
+      d.gross_amount ?? 0, d.net_ppw ?? '', d.rep_pool ?? 0,
+      d.closer_pay_net ?? 0, d.setter_pay ?? 0, staffPay,
+      fundsPendingM1, fundsPendingM2, round2(fundsPendingM1 + fundsPendingM2),
+      d.funds_received_m1 ?? 0, d.funds_received_m2 ?? 0, totalFundsReceived, poweredNet,
+      d.closer_rep_id ? (d.closer_breakdown_approved ? 'Yes' : 'No') : '',
+      d.setter_rep_id ? (d.setter_breakdown_approved ? 'Yes' : 'No') : ''
+    ];
+  });
+  downloadCsv(`deals-board-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+});
+function round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
 
 // loadDeals doesn't read from META, so these run as two parallel requests instead of one
 // waiting on the other — each Turso round-trip has real latency, so this halves the wait.

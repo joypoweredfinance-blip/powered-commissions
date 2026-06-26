@@ -44,10 +44,13 @@ async function load() {
     kpiCard('Avg Net PPW', k.avgNetPPW ?? '—', `${d.rep.pay_scale_name || ''}`)
   ].join('');
   renderTrendChart('trendChart', d.monthlyTrend, { color: '#1B5E45', label: 'Paid' });
+  // Goes to the read-only rep-view preview (exactly what this rep themselves would see), never
+  // the admin's full editable deal page — those are two different audiences for two different
+  // purposes, and this list is specifically "what does this rep's own world look like."
   document.getElementById('jobsList').innerHTML = d.recentJobs.length === 0
     ? '<p style="color:var(--brand-muted); font-size:13px;">No jobs yet.</p>'
     : d.recentJobs.map((j) => `
-      <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--brand-border); cursor:pointer;" onclick="window.location.href='/admin/deal.html?id=${j.id}'">
+      <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--brand-border); cursor:pointer;" onclick="window.location.href='/admin/rep-job-view.html?repId=${repId}&dealId=${j.id}'">
         <span>${j.customer_name} <span style="color:var(--brand-muted); font-size:12px;">(${j.status_label || 'no status'})</span></span>
         <strong>${fmtMoney(j.closer_rep_id == repId ? j.closer_pay_net : j.setter_pay)}</strong>
       </div>
