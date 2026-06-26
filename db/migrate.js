@@ -158,6 +158,12 @@ async function runMigrations() {
     }
     if (rows.length) console.log(`Migration: split full_name into first/last for ${rows.length} row(s) in ${table}`);
   }
+
+  // Reps are no longer pre-labeled Closer/Setter/Both on the Reps page — every rep can be
+  // either, decided per-deal instead. Existing reps that were narrowly typed need to become
+  // 'both' too, or they'd silently disappear from one of the two dropdowns on the Deal page.
+  const nonBothReps = await run(`UPDATE reps SET rep_type = 'both' WHERE rep_type != 'both'`);
+  if (nonBothReps.rowsAffected) console.log(`Migration: set rep_type = 'both' for ${nonBothReps.rowsAffected} rep(s)`);
 }
 
 module.exports = { runMigrations, columnExists };

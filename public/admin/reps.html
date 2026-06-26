@@ -25,10 +25,7 @@ document.getElementById('pageContent').innerHTML = `
       <div><label>Last Name</label><input type="text" id="nr_last_name"></div>
     </div>
     <label>Display Name (short, e.g. "Roy F")</label><input type="text" id="nr_display_name">
-    <div class="field-row">
-      <div><label>Type</label><select id="nr_rep_type"><option value="closer">Closer</option><option value="setter">Setter</option><option value="both">Both</option></select></div>
-      <div><label>Pay Scale</label><select id="nr_pay_scale_id"></select></div>
-    </div>
+    <label>Pay Scale</label><select id="nr_pay_scale_id"></select>
     <label>Email (optional, can add later)</label><input type="email" id="nr_email">
     <div style="display:flex; gap:8px;">
       <button class="btn small" id="saveRepBtn" style="width:auto;">Save Rep</button>
@@ -37,7 +34,7 @@ document.getElementById('pageContent').innerHTML = `
   </div>
   <div class="card" style="overflow-x:auto;">
     <table class="data-table">
-      <thead><tr><th>Name</th><th>Type</th><th>Pay Scale</th><th>Login</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Name</th><th>Pay Scale</th><th>Login</th><th>Status</th><th></th></tr></thead>
       <tbody id="repsBody"></tbody>
     </table>
   </div>
@@ -101,7 +98,6 @@ async function loadReps() {
   document.getElementById('repsBody').innerHTML = REPS.map((r) => `
     <tr data-id="${r.id}">
       <td><a href="/admin/rep-dashboard.html?id=${r.id}"><strong>${r.full_name}</strong></a>${r.display_name ? `<br><span style="color:var(--brand-muted); font-size:12px;">${r.display_name}</span>` : ''}${r.pay_type === 'weekly' ? '<br><span class="badge amber">Weekly Pay</span>' : ''}</td>
-      <td>${r.rep_type}</td>
       <td>${scaleSelect(r.id, r.pay_scale_id)}</td>
       <td>${r.login_email ? `<span class="badge green">${r.login_email}</span> <button class="btn secondary small reset-pw-btn" data-id="${r.id}" style="width:auto;">Reset Password</button>` : `<button class="btn secondary small create-login-btn" data-id="${r.id}" style="width:auto;">Create Login</button>`}</td>
       <td>${r.active ? '<span class="badge green">Active</span>' : '<span class="badge muted">Inactive</span>'}</td>
@@ -199,7 +195,6 @@ document.getElementById('saveRepBtn').addEventListener('click', async () => {
       first_name: first_name || null,
       last_name: last_name || null,
       display_name: document.getElementById('nr_display_name').value.trim() || null,
-      rep_type: document.getElementById('nr_rep_type').value,
       pay_scale_id: Number(document.getElementById('nr_pay_scale_id').value),
       email: document.getElementById('nr_email').value.trim() || null
     });

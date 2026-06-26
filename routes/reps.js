@@ -26,7 +26,7 @@ router.post('/', async (req, res) => {
     const result = await run(
       `INSERT INTO reps (full_name, first_name, last_name, display_name, rep_type, email, phone, account_info, pay_type, weekly_amount, pay_scale_id, notes)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [full_name, first_name || null, last_name || null, display_name || null, rep_type || 'closer', email || null, phone || null,
+      [full_name, first_name || null, last_name || null, display_name || null, rep_type || 'both', email || null, phone || null,
        account_info || null, pay_type || 'commission', weekly_amount || null, pay_scale_id || null, notes || null]
     );
     res.status(201).json(await get(`SELECT * FROM reps WHERE id = ?`, [Number(result.lastInsertRowid)]));

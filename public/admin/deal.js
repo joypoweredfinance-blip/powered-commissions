@@ -29,10 +29,11 @@ async function guardedClick(button, busyLabel, fn) {
   }
 }
 
+// Any rep can be a Closer or a Setter — the role is decided per-deal here, not pre-assigned
+// on the Reps page, so this shows the full active roster for both dropdowns.
 function repOptions(type, selected) {
-  const filtered = META.reps.filter((r) => r.rep_type === type || r.rep_type === 'both');
   let html = `<option value="">${type === 'setter' ? '— None —' : '— Select —'}</option>`;
-  filtered.forEach((r) => {
+  META.reps.forEach((r) => {
     html += `<option value="${r.id}" ${String(r.id) === String(selected) ? 'selected' : ''}>${r.display_name || r.full_name}</option>`;
   });
   return html;
