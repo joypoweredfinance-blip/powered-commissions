@@ -29,17 +29,31 @@ async function load() {
       <div style="height:200px;"><canvas id="trendChart"></canvas></div>
     </div>
     <div class="detail-section">
-      <p class="section-title" style="margin-top:0;">Recent Jobs</p>
+      <p class="section-title" style="margin-top:0;">My Deals</p>
       <div id="recentJobs"></div>
     </div>
   `;
   renderTrendChart('trendChart', d.monthlyTrend, { color: '#6B3FD4' });
+  // Contract Value + Total Adders only — no Installer/Financier here. Pay amount is whatever
+  // this rep's own role earns on that deal (closer sees Closer Pay, setter sees Setter Pay),
+  // never the other role's figure — shapeForRole() on the server already enforces that split.
   document.getElementById('recentJobs').innerHTML = d.recentJobs.length === 0
     ? '<p style="color:var(--brand-muted); font-size:13px;">Nothing approved for your view yet — check back soon.</p>'
-    : d.recentJobs.slice(0, 5).map((j) => `
-      <div class="detail-row" style="cursor:pointer;" onclick="window.location.href='/rep/job.html?id=${j.id}'">
-        <span class="lbl">${j.customer_name}</span>
-        <span class="val">${j.status_label || ''}</span>
+    : d.recentJobs.map((j) => `
+      <div class="job-card" onclick="window.location.href='/rep/job.html?id=${j.id}'">
+        <div class="top-row">
+          <div>
+            <div class="customer">${j.customer_name}</div>
+            <div class="address">${j.status_label || ''}</div>
+          </div>
+          <span class="badge ${j.viewRole === 'closer' ? 'green' : 'amber'}">${j.viewRole === 'closer' ? 'Final' : 'Setter'}</span>
+        </div>
+        <div class="meta-row">
+          <span>Contract: ${fmtMoney(j.contract_value)}</span>
+          <span>Total Adders: ${fmtMoney(j.total_adders)}</span>
+          <span>${j.paid ? '✅ Paid' : '⏳ Unpaid'}</span>
+        </div>
+        <div class="pay-amount">${fmtMoney(j.payAmount)}</div>
       </div>
     `).join('');
 }

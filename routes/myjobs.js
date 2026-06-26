@@ -12,7 +12,8 @@ async function visibleDeals(repId) {
   const rows = await all(`
     SELECT d.*, ds.label as status_label, inst.name as installer_name, fin.name as financier_name,
            cr.full_name as closer_name, cr.display_name as closer_display,
-           sr.full_name as setter_name, sr.display_name as setter_display
+           sr.full_name as setter_name, sr.display_name as setter_display,
+           (SELECT COALESCE(SUM(amount), 0) FROM deal_adders WHERE deal_id = d.id) as total_adders
     FROM deals d
     LEFT JOIN deal_statuses ds ON ds.id = d.status_id
     LEFT JOIN installers inst ON inst.id = d.installer_id
@@ -37,6 +38,7 @@ function shapeForRole(deal) {
     monthly_payment: deal.monthly_payment, rate_per_kwh: deal.rate_per_kwh, escalator_pct: deal.escalator_pct,
     date_signed: deal.date_signed, install_date: deal.install_date, install_completed_date: deal.install_completed_date,
     net_ppw: deal.net_ppw, pay_scale_rate: deal.pay_scale_rate, below_floor: deal.below_floor,
+    total_adders: deal.total_adders || 0,
     closer_display: deal.closer_display || deal.closer_name,
     setter_display: deal.setter_display || deal.setter_name,
     viewRole: deal.viewRole
@@ -90,11 +92,15 @@ router.get('/dashboard', async (req, res) => {
       if (d.net_ppw !== null && d.net_ppw !== undefined) { ppwSum += d.net_ppw; ppwCount++; }
       if (d.paid && d.paidDate) {
         const amt = d.payAmount || 0;
-        const mk = (d.paidDate || '').slice(0, 7);
+        // All-Time stays anchored on when it was actually paid — This Month / YTD / the trend
+        // chart are anchored on Solar Date (install_completed_date) instead, so a rep's period
+        // totals reflect when the job itself went solar, not whenever the payment happened to
+        // get processed.
         allTimeCommission += amt;
-        if (mk === thisMonth) thisMonthCommission += amt;
-        if (mk.startsWith(thisYear)) ytdCommission += amt;
-        if (mk in monthlyTotals) monthlyTotals[mk] += amt;
+        const solarMk = (d.install_completed_date || '').slice(0, 7);
+        if (solarMk === thisMonth) thisMonthCommission += amt;
+        if (solarMk.startsWith(thisYear)) ytdCommission += amt;
+        if (solarMk in monthlyTotals) monthlyTotals[solarMk] += amt;
       }
     }
 
@@ -107,7 +113,8 @@ router.get('/dashboard', async (req, res) => {
         avgNetPPW: ppwCount ? round2(ppwSum / ppwCount) : null
       },
       monthlyTrend: lastNMonths(6).map((m) => ({ month: m, total: round2(monthlyTotals[m]) })),
-      recentJobs: deals.slice(0, 8)
+      // Unsliced — this is now the dashboard's primary "my deals" list, not just a preview.
+      recentJobs: deals
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

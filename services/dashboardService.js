@@ -170,11 +170,11 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
   const fundsByFinancierTotal = round2(fundsByFinancier.reduce((s, f) => s + f.total, 0));
 
   // "Cut of the pie" breakdown — where each signed contract dollar actually goes: EPC cost,
-  // each adder category, and what's left as POWERED's own margin. Anchored on date_signed
-  // (when the contract value was actually established), filtered by the same status/date
-  // selection as the rest of the dashboard.
-  const pieDeals = await all(`SELECT id, contract_value, epc_rate_per_watt, system_size_kw, date_signed FROM deals d WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}`, fundingStatusArgs);
-  const pieMatchedIds = new Set(pieDeals.filter((d) => !hasPeriod || inRange(d.date_signed, startDate, endDate)).map((d) => d.id));
+  // each adder category, and what's left as POWERED's own margin. Anchored on Solar Date
+  // (install_completed_date) per Joy's request, filtered by the same status/date selection
+  // as the rest of the dashboard.
+  const pieDeals = await all(`SELECT id, contract_value, epc_rate_per_watt, system_size_kw, install_completed_date FROM deals d WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}`, fundingStatusArgs);
+  const pieMatchedIds = new Set(pieDeals.filter((d) => !hasPeriod || inRange(d.install_completed_date, startDate, endDate)).map((d) => d.id));
   let totalContractValue = 0, totalEpcCost = 0;
   for (const d of pieDeals) {
     if (!pieMatchedIds.has(d.id)) continue;
@@ -346,7 +346,7 @@ async function getRepDashboard(repId) {
     ORDER BY d.updated_at DESC
   `, [repId, repId]);
 
-  let dealsThisMonth = 0, thisMonthCommission = 0, ytdCommission = 0, pendingApproval = 0, allTimeCommission = 0;
+  let dealsThisMonth = 0, thisMonthCommission = 0, ytdCommission = 0, allTimeCommission = 0;
   let ppwSum = 0, ppwCount = 0;
   const monthlyTotals = {};
   lastNMonths(6).forEach((m) => { monthlyTotals[m] = 0; });
@@ -356,27 +356,26 @@ async function getRepDashboard(repId) {
     const isSetter = d.setter_rep_id === Number(repId);
     if (d.date_signed && monthKey(d.date_signed) === thisMonth) dealsThisMonth++;
     if (d.net_ppw !== null && d.net_ppw !== undefined) { ppwSum += d.net_ppw; ppwCount++; }
+    // This Month / YTD / the trend chart are anchored on Solar Date (install_completed_date),
+    // not on whenever the payment happened to get processed — All-Time stays paid-date-based.
+    const solarMk = monthKey(d.install_completed_date);
 
     if (isCloser) {
-      if (!d.closer_breakdown_approved) pendingApproval += d.closer_pay_net || 0;
       if (d.closer_paid && d.closer_paid_date) {
         const amt = d.closer_pay_net || 0;
-        const mk = monthKey(d.closer_paid_date);
         allTimeCommission += amt;
-        if (mk === thisMonth) thisMonthCommission += amt;
-        if (mk && mk.startsWith(thisYear)) ytdCommission += amt;
-        if (mk in monthlyTotals) monthlyTotals[mk] += amt;
+        if (solarMk === thisMonth) thisMonthCommission += amt;
+        if (solarMk && solarMk.startsWith(thisYear)) ytdCommission += amt;
+        if (solarMk in monthlyTotals) monthlyTotals[solarMk] += amt;
       }
     }
     if (isSetter) {
-      if (!d.setter_breakdown_approved) pendingApproval += d.setter_pay || 0;
       if (d.setter_paid && d.setter_paid_date) {
         const amt = d.setter_pay || 0;
-        const mk = monthKey(d.setter_paid_date);
         allTimeCommission += amt;
-        if (mk === thisMonth) thisMonthCommission += amt;
-        if (mk && mk.startsWith(thisYear)) ytdCommission += amt;
-        if (mk in monthlyTotals) monthlyTotals[mk] += amt;
+        if (solarMk === thisMonth) thisMonthCommission += amt;
+        if (solarMk && solarMk.startsWith(thisYear)) ytdCommission += amt;
+        if (solarMk in monthlyTotals) monthlyTotals[solarMk] += amt;
       }
     }
   }
@@ -388,7 +387,6 @@ async function getRepDashboard(repId) {
       thisMonthCommission: round2(thisMonthCommission),
       ytdCommission: round2(ytdCommission),
       allTimeCommission: round2(allTimeCommission),
-      pendingApproval: round2(pendingApproval),
       avgNetPPW: ppwCount ? round2(ppwSum / ppwCount) : null
     },
     monthlyTrend: lastNMonths(6).map((m) => ({ month: m, total: round2(monthlyTotals[m]) })),

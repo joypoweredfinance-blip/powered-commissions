@@ -41,7 +41,6 @@ async function load() {
     kpiCard('This Month', fmtMoney(k.thisMonthCommission), `${k.dealsThisMonth} deals signed this month`),
     kpiCard('YTD', fmtMoney(k.ytdCommission)),
     kpiCard('All-Time Paid', fmtMoney(k.allTimeCommission)),
-    kpiCard('Pending Approval', fmtMoney(k.pendingApproval)),
     kpiCard('Avg Net PPW', k.avgNetPPW ?? '—', `${d.rep.pay_scale_name || ''}`)
   ].join('');
   renderTrendChart('trendChart', d.monthlyTrend, { color: '#1B5E45', label: 'Paid' });

@@ -86,10 +86,10 @@ async function listDeals({ statusId, statusIds, fundingStatuses, repId, installe
   if (installerId) { sql += ` AND d.installer_id = ?`; args.push(installerId); }
   if (phase) { sql += ` AND ds.phase = ?`; args.push(phase); }
   if (search) { sql += ` AND (d.customer_name LIKE ? OR d.customer_address LIKE ?)`; args.push(`%${search}%`, `%${search}%`); }
-  // Anchored on Date Signed — the one date every deal reliably has, same anchor the dashboard's
-  // contract-value pie chart uses.
-  if (startDate) { sql += ` AND d.date_signed >= ?`; args.push(startDate); }
-  if (endDate) { sql += ` AND d.date_signed <= ?`; args.push(endDate); }
+  // Anchored on Solar Date (install_completed_date) per Joy's request — same anchor the
+  // dashboard's contract-value pie chart uses.
+  if (startDate) { sql += ` AND d.install_completed_date >= ?`; args.push(startDate); }
+  if (endDate) { sql += ` AND d.install_completed_date <= ?`; args.push(endDate); }
   sql += ` ORDER BY ds.sort_order ASC, d.updated_at DESC`;
   return all(sql, args);
 }
