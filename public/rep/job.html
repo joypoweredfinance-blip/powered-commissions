@@ -74,7 +74,7 @@ async function load() {
       <p class="section-title" style="margin-top:0;">Rep Pay Summary</p>
       ${j.below_floor ? `<div class="error-msg show">This deal is below the pay-scale floor — pay is pending manual review.</div>` : ''}
       <div class="detail-row"><span class="lbl">Net PPW</span><span class="val">${j.net_ppw ?? '—'}</span></div>
-      <div class="detail-row"><span class="lbl">Pay Scale</span><span class="val">${j.pay_scale_rate ? '$' + j.pay_scale_rate + '/kW' : '—'}</span></div>
+      <div class="detail-row"><span class="lbl">Pay Scale</span><span class="val">${j.pay_scale_rate ? fmtMoney(j.pay_scale_rate) + '/kW' : '—'}</span></div>
       ${isCloser ? `<div class="detail-row"><span class="lbl">Gross Pay</span><span class="val">${fmtMoney(j.payGross)}</span></div>` : ''}
       ${j.cashbackDeduction ? `<div class="detail-row"><span class="lbl">Cashback Deduction</span><span class="val">−${fmtMoney(j.cashbackDeduction)}</span></div>` : ''}
       ${j.advanceDeduction ? `<div class="detail-row"><span class="lbl">Advance Deduction</span><span class="val">−${fmtMoney(j.advanceDeduction)}</span></div>` : ''}

@@ -441,6 +441,10 @@ function calcRow(label, value, opts = {}) {
   return `<div class="${cls}"><span class="lbl">${label}</span><span class="val">${value}</span></div>`;
 }
 
+// Pay Scale Rate is a dollar value (per kW), so it follows the same $ xx,xxx.xx convention as
+// every other money figure — just with "/kW" appended.
+function fmtRate2(n) { return (n === null || n === undefined || n === '') ? '—' : `${fmtMoney(n)}/kW`; }
+
 // Plain manual deductions (same treatment as cashback_amount) — editable right where they're
 // used, since seeing the Total respond immediately is the point.
 function calcEditableRow(label, value, fieldName) {
@@ -506,6 +510,19 @@ function renderCalc() {
   renderFundsReceived();
 }
 
+// Auto-filled from the deal's real adders below — same category folding ("other" -> misc) as
+// the rep-facing computeAdderCategoryTotals(), just computed locally since DEAL.adders is
+// already loaded client-side and this is admin-only (Permit included too, unlike the Setter
+// Calculator's preliminary form which is deliberately limited to MPU/Roof/Battery/Misc).
+function closerAdderCategoryTotals(adders) {
+  const totals = { mpu: 0, reroof_sow: 0, battery: 0, permit: 0, misc: 0 };
+  (adders || []).forEach((a) => {
+    const cat = a.category === 'other' ? 'misc' : a.category;
+    if (totals[cat] !== undefined) totals[cat] = round2(totals[cat] + (Number(a.amount) || 0));
+  });
+  return totals;
+}
+
 function renderCloserCalc() {
   const d = DEAL;
   let html = '';
@@ -513,10 +530,16 @@ function renderCloserCalc() {
     html += `<div class="error-msg show" style="margin-bottom:14px;">Below the pay-scale hard floor — needs manual approval before any commission is paid.</div>`;
   }
   html += `<div style="margin-bottom:10px;">${approvalBadgeFor('closer')}</div>`;
+  const catTotals = closerAdderCategoryTotals(d.adders);
+  html += calcRow('MPU', fmtMoney(catTotals.mpu));
+  html += calcRow('Roof', fmtMoney(catTotals.reroof_sow));
+  html += calcRow('Battery', fmtMoney(catTotals.battery));
+  if (catTotals.permit) html += calcRow('Permit', fmtMoney(catTotals.permit));
+  html += calcRow('Miscellaneous', fmtMoney(catTotals.misc));
   html += calcRow('System Size', d.system_size_kw ? `${d.system_size_kw} kW` : '—');
   html += calcRow('Net PPW', d.net_ppw ?? '—');
   html += calcRow('Gross', fmtMoney(d.gross_amount));
-  html += calcRow('Pay Scale Rate', d.pay_scale_rate ? `$${d.pay_scale_rate}/kW` : '—');
+  html += calcRow('Pay Scale Rate', fmtRate2(d.pay_scale_rate));
   html += calcRow('Rep Pool', fmtMoney(d.rep_pool));
   html += calcRow('Closer Pay (gross)', fmtMoney(d.closer_pay_gross));
   if (d.cashback_amount) html += calcRow('Cashback Deduction', `−${fmtMoney(d.cashback_amount * 0.5)}`);
@@ -557,7 +580,7 @@ function renderSetterCalc() {
     html += `<div class="error-msg show" style="margin-bottom:14px;">Below the pay-scale hard floor on these preliminary numbers — needs manual review before any setter pay is paid.</div>`;
   }
   html += calcRow('Net PPW', d.setter_calc_net_ppw ?? '—');
-  html += calcRow('Pay Scale Rate', d.setter_calc_pay_scale_rate ? `$${d.setter_calc_pay_scale_rate}/kW` : '—');
+  html += calcRow('Pay Scale Rate', fmtRate2(d.setter_calc_pay_scale_rate));
   html += calcRow('Rep Pool', fmtMoney(d.setter_calc_rep_pool));
   html += calcRow('Setter Pay', fmtMoney(d.setter_pay), { total: true });
   html += overrideBadgeHtml(lockedFieldsFor(SETTER_CALC_FIELDS));
@@ -866,7 +889,7 @@ function wireCloserOverrideForm() {
       <input type="number" step="0.0001" id="ov_net_ppw" placeholder="leave blank to keep current">
       <label>Gross <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.gross_amount)})</span></label>
       <input type="number" step="0.01" id="ov_gross_amount" placeholder="leave blank to keep current">
-      <label>Pay Scale Rate ($/kW) <span style="color:var(--brand-muted); font-weight:400;">(current: ${d.pay_scale_rate ?? '—'})</span></label>
+      <label>Pay Scale Rate ($/kW) <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtRate2(d.pay_scale_rate)})</span></label>
       <input type="number" step="0.01" id="ov_pay_scale_rate" placeholder="leave blank to keep current">
       <label>Rep Pool <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.rep_pool)})</span></label>
       <input type="number" step="0.01" id="ov_rep_pool" placeholder="leave blank to keep current">
@@ -957,7 +980,7 @@ function wireSetterOverrideForm() {
       </p>
       <label>Net PPW <span style="color:var(--brand-muted); font-weight:400;">(current: ${d.setter_calc_net_ppw ?? '—'})</span></label>
       <input type="number" step="0.0001" id="ov_setter_net_ppw" placeholder="leave blank to keep current">
-      <label>Pay Scale Rate ($/kW) <span style="color:var(--brand-muted); font-weight:400;">(current: ${d.setter_calc_pay_scale_rate ?? '—'})</span></label>
+      <label>Pay Scale Rate ($/kW) <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtRate2(d.setter_calc_pay_scale_rate)})</span></label>
       <input type="number" step="0.01" id="ov_setter_pay_scale_rate" placeholder="leave blank to keep current">
       <label>Rep Pool <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.setter_calc_rep_pool)})</span></label>
       <input type="number" step="0.01" id="ov_setter_rep_pool" placeholder="leave blank to keep current">

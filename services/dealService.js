@@ -5,6 +5,15 @@ const {
 } = require('./commissionEngine');
 const auditLog = require('./auditLog');
 
+// Like adders, these are commission-relevant plain inputs — saving any of them should
+// auto-recalculate the Setter Calculator's outputs (see updateDeal() below), the same way
+// addAdder()/updateAdder() already auto-recalculate the Closer side.
+const SETTER_CALC_INPUT_FIELDS = [
+  'setter_calc_contract_value', 'setter_calc_mpu_amount', 'setter_calc_roof_amount',
+  'setter_calc_battery_amount', 'setter_calc_misc_amount', 'setter_calc_system_size_kw',
+  'setter_calc_rate_per_kwh', 'setter_calc_monthly_payment'
+];
+
 const EDITABLE_FIELDS = [
   'customer_name', 'customer_address', 'customer_phone', 'status_id', 'closer_rep_id', 'setter_rep_id',
   'pay_split', 'is_referral', 'installer_id', 'financier_id', 'module_type', 'battery_type', 'num_batteries',
@@ -26,9 +35,7 @@ const EDITABLE_FIELDS = [
   // Joy's manually-entered, frozen-at-entry preliminary numbers for the Setter Calculator —
   // these are the ONLY inputs that ever feed setter_pay. Plain fields, not locked overrides,
   // same reasoning as cashback_amount: she's just entering data, not overriding a computed result.
-  'setter_calc_contract_value', 'setter_calc_mpu_amount', 'setter_calc_roof_amount',
-  'setter_calc_battery_amount', 'setter_calc_misc_amount', 'setter_calc_system_size_kw',
-  'setter_calc_rate_per_kwh', 'setter_calc_monthly_payment'
+  ...SETTER_CALC_INPUT_FIELDS
 ];
 
 const COMPUTED_FIELDS = [
@@ -181,10 +188,15 @@ async function updateDeal(id, data, userId, reason = null) {
   const values = fields.map((f) => data[f]);
   await run(`UPDATE deals SET ${setClause}, updated_at = datetime('now') WHERE id = ?`, [...values, id]);
   await auditLog.logDiff('deals', id, oldRow, data, userId, reason);
-  // Deliberately does NOT auto-recalculate here. A general field save (customer info, dates,
-  // notes, etc.) should only persist what was actually edited — recalculation is a separate,
-  // explicit action (the Recalculate button, adding/editing an adder, or creating the deal)
-  // so it never looks like a save produced a second, surprise change to the commission numbers.
+  // A plain general field save (customer info, dates, notes, etc.) deliberately does NOT
+  // auto-recalculate — recalculation is a separate, explicit action (the Recalculate button,
+  // adding/editing an adder, or creating the deal) so it never looks like a save produced a
+  // second, surprise change to the commission numbers. setter_calc_* inputs are the one
+  // exception: they're commission-relevant the same way adders are, so saving one of them
+  // auto-recalculates the Setter Calculator's outputs immediately, with no extra click needed.
+  if (fields.some((f) => SETTER_CALC_INPUT_FIELDS.includes(f))) {
+    return recalculate(id, userId);
+  }
   return getDeal(id);
 }
 
