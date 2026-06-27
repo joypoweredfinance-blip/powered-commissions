@@ -62,14 +62,13 @@ function lookupTierRate(netPPW, tiers) {
 }
 
 /**
- * @param {object} deal - contract_value, system_size_kw, pay_split, cashback_amount, has setter (setter_rep_id)
+ * @param {object} deal - contract_value, system_size_kw, pay_split, cashback_amount, has setter
+ *   (setter_rep_id), advance_deduction, deduction_other
  * @param {array} adders - [{amount, counts_as_hard_cost}]
  * @param {object} payScale - { hard_floor_ppw, tiers: [{net_ppw_threshold, dollar_per_kw}] (sorted asc) }
  * @param {object} settings - commission_settings row (setter_split_pct, closer_split_pct, cashback_split_pct)
- * @param {number} advanceAlreadyTaken
- * @param {number} clawbackAmount
  */
-function calculateRepCommission({ deal, adders, payScale, settings, advanceAlreadyTaken = 0, clawbackAmount = 0 }) {
+function calculateRepCommission({ deal, adders, payScale, settings }) {
   const hardCosts = sumHardCosts(adders);
   const netPPW = computeNetPPW(deal.contract_value, hardCosts, deal.system_size_kw);
 
@@ -97,10 +96,10 @@ function calculateRepCommission({ deal, adders, payScale, settings, advanceAlrea
   }
 
   const cashbackDeduction = round2((deal.cashback_amount || 0) * settings.cashback_split_pct);
-  const closerPayNet = round2(closerPayGross - cashbackDeduction);
-
-  const closerNetPayable = round2(closerPayNet - advanceAlreadyTaken - clawbackAmount);
-  const setterNetPayable = setterPay; // setter is never touched by cashback, advance, or clawback
+  // closer_pay_net is the rep's true final approved pay — every deduction that applies to the
+  // closer comes out here, never just as a separate display-only figure. Setter is never
+  // touched by cashback, advance, or any other deduction.
+  const closerPayNet = round2(closerPayGross - cashbackDeduction - (deal.advance_deduction || 0) - (deal.deduction_other || 0));
 
   return {
     hardCosts: round2(hardCosts),
@@ -111,9 +110,7 @@ function calculateRepCommission({ deal, adders, payScale, settings, advanceAlrea
     setterPay,
     closerPayGross,
     cashbackDeduction,
-    closerPayNet,
-    closerNetPayable,
-    setterNetPayable
+    closerPayNet
   };
 }
 

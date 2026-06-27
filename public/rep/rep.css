@@ -56,12 +56,17 @@
   box-shadow: var(--shadow-card);
   padding: 16px;
   margin-bottom: 12px;
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.15s;
 }
+.job-card:hover, .job-card:active { box-shadow: 0 4px 14px rgba(21,19,26,0.14); transform: translateY(-1px); }
 .job-card .top-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 .job-card .customer { font-weight: 700; font-size: 15px; color: var(--brand-black); }
 .job-card .address { font-size: 12.5px; color: var(--brand-muted); margin-top: 2px; }
 .job-card .meta-row { display: flex; gap: 14px; margin-top: 10px; font-size: 12.5px; color: var(--brand-muted); }
-.job-card .pay-amount { font-size: 20px; font-weight: 800; margin-top: 10px; }
+.job-card .pay-row { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+.job-card .pay-amount { font-size: 20px; font-weight: 800; }
+.job-card .chevron { color: var(--brand-purple); font-size: 20px; font-weight: 700; }
 
 .breakdown-header {
   border-radius: var(--radius-lg);

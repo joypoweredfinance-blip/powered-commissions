@@ -34,9 +34,9 @@ async function load() {
     </div>
   `;
   renderTrendChart('trendChart', d.monthlyTrend, { color: '#6B3FD4' });
-  // Contract Value + Total Adders only — no Installer/Financier here. Pay amount is whatever
-  // this rep's own role earns on that deal (closer sees Closer Pay, setter sees Setter Pay),
-  // never the other role's figure — shapeForRole() on the server already enforces that split.
+  // d.recentJobs only ever contains deals already approved for this rep's own view — pay
+  // amount is whatever this rep's own role earns (closer sees Closer Pay, setter sees Setter
+  // Pay), never the other role's figure. Cards are styled to look obviously clickable.
   document.getElementById('recentJobs').innerHTML = d.recentJobs.length === 0
     ? '<p style="color:var(--brand-muted); font-size:13px;">Nothing approved for your view yet — check back soon.</p>'
     : d.recentJobs.map((j) => `
@@ -44,16 +44,18 @@ async function load() {
         <div class="top-row">
           <div>
             <div class="customer">${j.customer_name}</div>
-            <div class="address">${j.status_label || ''}</div>
+            <div class="address">${j.customer_address || ''}</div>
           </div>
           <span class="badge ${j.viewRole === 'closer' ? 'green' : 'amber'}">${j.viewRole === 'closer' ? 'Final' : 'Setter'}</span>
         </div>
         <div class="meta-row">
-          <span>Contract: ${fmtMoney(j.contract_value)}</span>
-          <span>Total Adders: ${fmtMoney(j.total_adders)}</span>
-          <span>${j.paid ? '✅ Paid' : '⏳ Unpaid'}</span>
+          <span>Solar Date: ${fmtDate(j.install_completed_date)}</span>
+          <span>Net PPW: ${j.net_ppw ?? '—'}</span>
         </div>
-        <div class="pay-amount">${fmtMoney(j.payAmount)}</div>
+        <div class="pay-row">
+          <div class="pay-amount">${fmtMoney(j.payAmount)}</div>
+          <span class="chevron">›</span>
+        </div>
       </div>
     `).join('');
 }

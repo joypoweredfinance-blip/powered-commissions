@@ -227,6 +227,19 @@ module.exports = [
     uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
     uploaded_by INTEGER REFERENCES users(id)
   )`,
+  // One Receipt/Proof file per adder line item, admin-only — never sent to any rep-facing
+  // route (the rep payload only ever carries computeAdderCategoryTotals() output, never raw
+  // adder rows, so there's no path for this to leak even by accident).
+  `CREATE TABLE IF NOT EXISTS deal_adder_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    adder_id INTEGER NOT NULL REFERENCES deal_adders(id),
+    file_name TEXT NOT NULL,
+    file_type TEXT,
+    file_size INTEGER NOT NULL,
+    file_data BLOB NOT NULL,
+    uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+    uploaded_by INTEGER REFERENCES users(id)
+  )`,
   `CREATE TABLE IF NOT EXISTS advances (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     rep_id INTEGER NOT NULL REFERENCES reps(id),

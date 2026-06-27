@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const dashboardService = require('../services/dashboardService');
 const { get, all } = require('../db/client');
-const { visibleDeals, shapeForRole } = require('../services/repViewService');
+const { visibleDeals, shapeForRole, computeAdderCategoryTotals, computeRepDashboard } = require('../services/repViewService');
 
 router.get('/overall', async (req, res) => {
   try {
@@ -14,9 +14,11 @@ router.get('/overall', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Same computeRepDashboard() the rep's own login uses (/api/myjobs/dashboard) — approved-only,
+// so nothing shows up here that the rep themselves couldn't also see right now.
 router.get('/rep/:id', async (req, res) => {
   try {
-    const data = await dashboardService.getRepDashboard(req.params.id);
+    const data = await computeRepDashboard(req.params.id);
     if (!data) return res.status(404).json({ error: 'Rep not found' });
     res.json(data);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -42,8 +44,8 @@ router.get('/rep/:repId/job/:dealId', async (req, res) => {
     const deals = await visibleDeals(req.params.repId);
     const deal = deals.find((d) => String(d.id) === String(req.params.dealId));
     if (!deal) return res.status(404).json({ error: `Not approved for ${rep.display_name || rep.full_name}'s view yet, or doesn't involve this rep.` });
-    const adders = await all(`SELECT label, category, amount FROM deal_adders WHERE deal_id = ? ORDER BY sort_order, id`, [deal.id]);
-    res.json({ rep, ...shapeForRole(deal), adders });
+    const adders = await all(`SELECT category, amount FROM deal_adders WHERE deal_id = ?`, [deal.id]);
+    res.json({ rep, ...shapeForRole(deal), adderCategoryTotals: computeAdderCategoryTotals(adders) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

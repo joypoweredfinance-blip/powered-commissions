@@ -103,6 +103,45 @@ router.delete('/:id/adders/:adderId', async (req, res) => {
   }
 });
 
+// Receipt/Proof per line item — admin-only, any format. Never exposed to any rep-facing
+// route (those only ever return computeAdderCategoryTotals() output, never these rows).
+router.post('/:id/adders/:adderId/file', (req, res) => {
+  upload.single('file')(req, res, async (err) => {
+    if (err) {
+      const msg = err.code === 'LIMIT_FILE_SIZE' ? 'File is too large — max 10MB.' : err.message;
+      return res.status(400).json({ error: msg });
+    }
+    if (!req.file) return res.status(400).json({ error: 'No file was uploaded.' });
+    try {
+      const deal = await dealService.setAdderFile(req.params.adderId, {
+        fileName: req.file.originalname, fileType: req.file.mimetype, fileSize: req.file.size, fileData: req.file.buffer
+      }, req.user.id);
+      res.status(201).json(deal);
+    } catch (e) { res.status(400).json({ error: e.message }); }
+  });
+});
+
+router.get('/:id/adders/:adderId/file', async (req, res) => {
+  try {
+    const file = await dealService.getAdderFileBlob(req.params.adderId);
+    if (!file) return res.status(404).json({ error: 'No file attached.' });
+    res.setHeader('Content-Type', file.file_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.file_name)}"`);
+    res.send(Buffer.from(file.file_data));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/:id/adders/:adderId/file', async (req, res) => {
+  try {
+    const deal = await dealService.deleteAdderFile(req.params.adderId, req.user.id);
+    res.json(deal);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 router.post('/:id/approve', async (req, res) => {
   try {
     const { role, approved } = req.body;

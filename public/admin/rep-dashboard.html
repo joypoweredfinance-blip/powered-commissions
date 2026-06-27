@@ -6,6 +6,7 @@
 <title>Rep Dashboard — POWERED Commissions</title>
 <link rel="stylesheet" href="/shared/brand.css">
 <link rel="stylesheet" href="/admin/admin.css">
+<link rel="stylesheet" href="/rep/rep.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -20,25 +21,25 @@ function kpiCard(label, value, sub) {
 }
 
 async function load() {
+  // Same computeRepDashboard() the rep's own login uses — approved-only, so this can never
+  // show Joy something the rep themselves couldn't also see right now.
   const d = await api('GET', `/api/dashboard/rep/${repId}`);
   document.querySelector('.topbar h1').textContent = `${d.rep.full_name}'s Dashboard`;
   document.getElementById('pageContent').innerHTML = `
     <div class="kpi-grid" id="kpiGrid"></div>
-    <div class="detail-grid">
-      <div class="card">
-        <p class="section-title">Commission Paid — Last 6 Months</p>
-        <div style="height:240px;"><canvas id="trendChart"></canvas></div>
-      </div>
-      <div class="card">
-        <p class="section-title">Recent Jobs</p>
-        <div id="jobsList"></div>
-      </div>
+    <div class="card" style="margin-bottom:20px;">
+      <p class="section-title">Commission Paid — Last 6 Months</p>
+      <div style="height:240px;"><canvas id="trendChart"></canvas></div>
+    </div>
+    <div class="card">
+      <p class="section-title">My Deals</p>
+      <div id="jobsList"></div>
     </div>
     <a href="/admin/reps.html" style="display:inline-block; margin-top:16px;">← Back to Reps</a>
   `;
   const k = d.kpis;
   document.getElementById('kpiGrid').innerHTML = [
-    kpiCard('This Month', fmtMoney(k.thisMonthCommission), `${k.dealsThisMonth} deals signed this month`),
+    kpiCard('This Month', fmtMoney(k.thisMonthCommission)),
     kpiCard('YTD', fmtMoney(k.ytdCommission)),
     kpiCard('All-Time Paid', fmtMoney(k.allTimeCommission)),
     kpiCard('Avg Net PPW', k.avgNetPPW ?? '—', `${d.rep.pay_scale_name || ''}`)
@@ -46,13 +47,27 @@ async function load() {
   renderTrendChart('trendChart', d.monthlyTrend, { color: '#1B5E45', label: 'Paid' });
   // Goes to the read-only rep-view preview (exactly what this rep themselves would see), never
   // the admin's full editable deal page — those are two different audiences for two different
-  // purposes, and this list is specifically "what does this rep's own world look like."
+  // purposes, and this list is specifically "what does this rep's own world look like." Nothing
+  // appears here until it's actually approved for this rep's view, same as the rep sees.
   document.getElementById('jobsList').innerHTML = d.recentJobs.length === 0
-    ? '<p style="color:var(--brand-muted); font-size:13px;">No jobs yet.</p>'
+    ? '<p style="color:var(--brand-muted); font-size:13px;">Nothing approved for this rep\'s view yet.</p>'
     : d.recentJobs.map((j) => `
-      <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--brand-border); cursor:pointer;" onclick="window.location.href='/admin/rep-job-view.html?repId=${repId}&dealId=${j.id}'">
-        <span>${j.customer_name} <span style="color:var(--brand-muted); font-size:12px;">(${j.status_label || 'no status'})</span></span>
-        <strong>${fmtMoney(j.closer_rep_id == repId ? j.closer_pay_net : j.setter_pay)}</strong>
+      <div class="job-card" onclick="window.location.href='/admin/rep-job-view.html?repId=${repId}&dealId=${j.id}'">
+        <div class="top-row">
+          <div>
+            <div class="customer">${j.customer_name}</div>
+            <div class="address">${j.customer_address || ''}</div>
+          </div>
+          <span class="badge ${j.viewRole === 'closer' ? 'green' : 'amber'}">${j.viewRole === 'closer' ? 'Final' : 'Setter'}</span>
+        </div>
+        <div class="meta-row">
+          <span>Solar Date: ${fmtDate(j.install_completed_date)}</span>
+          <span>Net PPW: ${j.net_ppw ?? '—'}</span>
+        </div>
+        <div class="pay-row">
+          <div class="pay-amount">${fmtMoney(j.payAmount)}</div>
+          <span class="chevron">›</span>
+        </div>
       </div>
     `).join('');
 }

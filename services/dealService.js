@@ -110,6 +110,17 @@ async function getDeal(id) {
   `, [id]);
   if (!deal) return null;
   const adders = await all(`SELECT * FROM deal_adders WHERE deal_id = ? ORDER BY sort_order ASC, id ASC`, [id]);
+  // Receipt/Proof metadata per adder — admin-only, batch-fetched (no N+1), file_data itself
+  // excluded here for the same reason as the deal-level estimate files above.
+  if (adders.length) {
+    const adderFileRows = await all(
+      `SELECT adder_id, id, file_name, file_type, file_size, uploaded_at FROM deal_adder_files WHERE adder_id IN (${adders.map(() => '?').join(',')})`,
+      adders.map((a) => a.id)
+    );
+    const fileByAdderId = {};
+    adderFileRows.forEach((row) => { fileByAdderId[row.adder_id] = row; });
+    adders.forEach((a) => { a.receiptFile = fileByAdderId[a.id] || null; });
+  }
   const advances = await all(`SELECT a.*, r.full_name as rep_name FROM advances a LEFT JOIN reps r ON r.id = a.rep_id WHERE a.deal_id = ?`, [id]);
   const clawbacks = await all(`SELECT c.*, r.full_name as rep_name FROM clawbacks c LEFT JOIN reps r ON r.id = c.rep_id WHERE c.deal_id = ?`, [id]);
   // Attached here (not just on the dedicated GET /:id route) so every mutation — override,
@@ -196,13 +207,13 @@ async function recalculate(id, userId, { force = false } = {}) {
       system_size_kw: deal.system_size_kw || 0,
       pay_split: deal.pay_split || 0.5,
       cashback_amount: deal.cashback_amount || 0,
-      setter_rep_id: deal.setter_rep_id
+      setter_rep_id: deal.setter_rep_id,
+      advance_deduction: deal.advance_deduction || 0,
+      deduction_other: deal.deduction_other || 0
     },
     adders,
     payScale,
-    settings,
-    advanceAlreadyTaken: 0,
-    clawbackAmount: 0
+    settings
   });
 
   const owner = calculateOwnerDistribution({
@@ -292,9 +303,36 @@ async function updateAdder(adderId, data, userId) {
 async function deleteAdder(adderId, userId) {
   const adder = await get(`SELECT * FROM deal_adders WHERE id = ?`, [adderId]);
   if (!adder) throw new Error('Adder not found');
+  await run(`DELETE FROM deal_adder_files WHERE adder_id = ?`, [adderId]);
   await run(`DELETE FROM deal_adders WHERE id = ?`, [adderId]);
   await auditLog.logChange('deal_adders', adder.deal_id, 'adder_removed', `${adder.label}: $${adder.amount}`, null, userId);
   return recalculate(adder.deal_id, userId);
+}
+
+// Receipt/Proof — one file per adder, admin-only. Replaces whatever was there before, same
+// pattern as the deal-level estimate files.
+async function setAdderFile(adderId, { fileName, fileType, fileSize, fileData }, userId) {
+  const adder = await get(`SELECT deal_id FROM deal_adders WHERE id = ?`, [adderId]);
+  if (!adder) throw new Error('Adder not found');
+  await run(`DELETE FROM deal_adder_files WHERE adder_id = ?`, [adderId]);
+  await run(
+    `INSERT INTO deal_adder_files (adder_id, file_name, file_type, file_size, file_data, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)`,
+    [adderId, fileName, fileType || null, fileSize, fileData, userId]
+  );
+  await auditLog.logChange('deal_adders', adderId, 'receipt_file', null, fileName, userId, 'Receipt/Proof uploaded');
+  return getDeal(adder.deal_id);
+}
+
+async function getAdderFileBlob(adderId) {
+  return get(`SELECT file_name, file_type, file_data FROM deal_adder_files WHERE adder_id = ?`, [adderId]);
+}
+
+async function deleteAdderFile(adderId, userId) {
+  const adder = await get(`SELECT deal_id FROM deal_adders WHERE id = ?`, [adderId]);
+  if (!adder) throw new Error('Adder not found');
+  await run(`DELETE FROM deal_adder_files WHERE adder_id = ?`, [adderId]);
+  await auditLog.logChange('deal_adders', adderId, 'receipt_file', 'attached', null, userId, 'Receipt/Proof removed');
+  return getDeal(adder.deal_id);
 }
 
 async function setApproval(dealId, role, approved, userId) {
@@ -339,6 +377,21 @@ async function setPaymentFlag(dealId, recipient, paid, date, userId) {
 // every lock at once.
 async function setOverride(dealId, { override, reason, fields }, userId) {
   if (override === false) {
+    // When fields is an array (not the locking object below), this is a SCOPED unlock — e.g.
+    // turning off just the Setter Calculator's override without disturbing a Closer override
+    // that's still active on the same deal. Full clear (legacy behavior) when no fields given.
+    if (Array.isArray(fields) && fields.length) {
+      const oldRow = await get(`SELECT * FROM deals WHERE id = ?`, [dealId]);
+      const remaining = parseOverriddenFields(oldRow).filter((f) => !fields.includes(f));
+      const reasonsMap = parseFieldOverrideReasons(oldRow);
+      fields.forEach((f) => { delete reasonsMap[f]; });
+      await run(
+        `UPDATE deals SET manual_override = ?, overridden_fields = ?, field_override_reasons = ? WHERE id = ?`,
+        [remaining.length ? 1 : 0, JSON.stringify(remaining), JSON.stringify(reasonsMap), dealId]
+      );
+      await auditLog.logChange('deals', dealId, 'manual_override', 'partial', `cleared: ${fields.join(', ')}`, userId, reason);
+      return getDeal(dealId);
+    }
     await run(`UPDATE deals SET manual_override = 0, overridden_fields = '[]', field_override_reasons = '{}', override_reason = ?, override_by = ?, override_at = datetime('now') WHERE id = ?`,
       [reason || null, userId, dealId]);
     await auditLog.logChange('deals', dealId, 'manual_override', true, false, userId, reason);
@@ -389,6 +442,7 @@ async function setOverride(dealId, { override, reason, fields }, userId) {
 
 async function deleteDeal(id, userId) {
   await auditLog.logChange('deals', id, '_deleted', null, null, userId, 'Deal deleted');
+  await run(`DELETE FROM deal_adder_files WHERE adder_id IN (SELECT id FROM deal_adders WHERE deal_id = ?)`, [id]);
   await run(`DELETE FROM deal_adders WHERE deal_id = ?`, [id]);
   await run(`DELETE FROM deal_estimate_files WHERE deal_id = ?`, [id]);
   await run(`DELETE FROM deals WHERE id = ?`, [id]);
@@ -426,5 +480,6 @@ module.exports = {
   listDeals, getDeal, createDeal, updateDeal, recalculate,
   addAdder, updateAdder, deleteAdder, setApproval, setPaymentFlag, setOverride, deleteDeal,
   getCommissionSettings, getPayScaleForRep,
-  setEstimateFile, getEstimateFileBlob, deleteEstimateFile
+  setEstimateFile, getEstimateFileBlob, deleteEstimateFile,
+  setAdderFile, getAdderFileBlob, deleteAdderFile
 };

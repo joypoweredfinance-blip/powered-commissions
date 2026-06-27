@@ -333,67 +333,6 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
   };
 }
 
-async function getRepDashboard(repId) {
-  const rep = await get(`SELECT r.*, ps.name as pay_scale_name FROM reps r LEFT JOIN pay_scales ps ON ps.id = r.pay_scale_id WHERE r.id = ?`, [repId]);
-  if (!rep) return null;
-  const thisMonth = monthKey(new Date().toISOString());
-  const thisYear = String(new Date().getFullYear());
-
-  const deals = await all(`
-    SELECT d.*, ds.label as status_label
-    FROM deals d LEFT JOIN deal_statuses ds ON ds.id = d.status_id
-    WHERE d.closer_rep_id = ? OR d.setter_rep_id = ?
-    ORDER BY d.updated_at DESC
-  `, [repId, repId]);
-
-  let dealsThisMonth = 0, thisMonthCommission = 0, ytdCommission = 0, allTimeCommission = 0;
-  let ppwSum = 0, ppwCount = 0;
-  const monthlyTotals = {};
-  lastNMonths(6).forEach((m) => { monthlyTotals[m] = 0; });
-
-  for (const d of deals) {
-    const isCloser = d.closer_rep_id === Number(repId);
-    const isSetter = d.setter_rep_id === Number(repId);
-    if (d.date_signed && monthKey(d.date_signed) === thisMonth) dealsThisMonth++;
-    if (d.net_ppw !== null && d.net_ppw !== undefined) { ppwSum += d.net_ppw; ppwCount++; }
-    // This Month / YTD / the trend chart are anchored on Solar Date (install_completed_date),
-    // not on whenever the payment happened to get processed — All-Time stays paid-date-based.
-    const solarMk = monthKey(d.install_completed_date);
-
-    if (isCloser) {
-      if (d.closer_paid && d.closer_paid_date) {
-        const amt = d.closer_pay_net || 0;
-        allTimeCommission += amt;
-        if (solarMk === thisMonth) thisMonthCommission += amt;
-        if (solarMk && solarMk.startsWith(thisYear)) ytdCommission += amt;
-        if (solarMk in monthlyTotals) monthlyTotals[solarMk] += amt;
-      }
-    }
-    if (isSetter) {
-      if (d.setter_paid && d.setter_paid_date) {
-        const amt = d.setter_pay || 0;
-        allTimeCommission += amt;
-        if (solarMk === thisMonth) thisMonthCommission += amt;
-        if (solarMk && solarMk.startsWith(thisYear)) ytdCommission += amt;
-        if (solarMk in monthlyTotals) monthlyTotals[solarMk] += amt;
-      }
-    }
-  }
-
-  return {
-    rep,
-    kpis: {
-      dealsThisMonth,
-      thisMonthCommission: round2(thisMonthCommission),
-      ytdCommission: round2(ytdCommission),
-      allTimeCommission: round2(allTimeCommission),
-      avgNetPPW: ppwCount ? round2(ppwSum / ppwCount) : null
-    },
-    monthlyTrend: lastNMonths(6).map((m) => ({ month: m, total: round2(monthlyTotals[m]) })),
-    recentJobs: deals.slice(0, 8)
-  };
-}
-
 // Required here (not at top) since payRunService doesn't depend on dashboardService —
 // no cycle, just keeping the staff-dashboard-specific require next to its one use.
 const payRunService = require('./payRunService');
@@ -457,4 +396,4 @@ async function getStaffDashboard(staffId) {
   };
 }
 
-module.exports = { getOverallDashboard, getRepDashboard, getStaffDashboard };
+module.exports = { getOverallDashboard, getStaffDashboard };

@@ -3,7 +3,6 @@ const dealId = params.get('id');
 let META = null;
 let DEAL = null;
 let SETTINGS = null;
-let overrideMode = false;
 
 function val(id) { const el = document.getElementById(id); return el ? el.value : null; }
 function intval(id) { const v = val(id); return v === '' || v === null ? null : Number(v); }
@@ -219,21 +218,26 @@ function renderFull() {
           </div>
         </div>
 
+        <div class="card">
+          <p class="section-title">Payment Status</p>
+          <div id="paymentBox"></div>
+        </div>
+
       </div>
 
       <div>
         <div class="card" style="margin-bottom:20px;">
-          <p class="section-title">Commission Calculator</p>
+          <p class="section-title">Closer Commission Calculator</p>
           <p style="font-size:12px; color:var(--brand-muted); margin:-8px 0 12px;">
             These numbers only update when you click Recalculate (or add/edit a line item below) —
             saving the form on the left never silently changes them.
           </p>
-          <div id="calcLines"></div>
+          <div id="closerCalcLines"></div>
           <div style="display:flex; gap:8px; margin-top:14px;">
             <button class="btn secondary small" id="recalcBtn">Recalculate</button>
-            <button class="btn secondary small" id="overrideBtn"></button>
+            <button class="btn secondary small" id="closerOverrideBtn"></button>
           </div>
-          <div id="overrideForm" style="display:none; margin-top:14px; border-top:1px solid var(--brand-border); padding-top:14px;"></div>
+          <div id="closerOverrideForm" style="display:none; margin-top:14px; border-top:1px solid var(--brand-border); padding-top:14px;"></div>
           <div style="margin-top:14px; border-top:1px solid var(--brand-border); padding-top:14px;">
             <label>Original Commission Calculator Estimate ($) <span style="font-weight:400; color:var(--brand-muted); font-size:12px;">— just for comparison, never used in any calculation</span></label>
             <div style="display:flex; gap:8px;">
@@ -251,6 +255,19 @@ function renderFull() {
           </div>
         </div>
 
+        <div class="card" style="margin-bottom:20px; display:none;" id="setterCalcCard">
+          <p class="section-title">Setter Commission Calculator</p>
+          <p style="font-size:12px; color:var(--brand-muted); margin:-8px 0 12px;">
+            Independent from the Closer calculator — its own override, its own approval for the
+            setter's view, never affected by cashback or the deductions above.
+          </p>
+          <div id="setterCalcLines"></div>
+          <div style="display:flex; gap:8px; margin-top:14px;">
+            <button class="btn secondary small" id="setterOverrideBtn"></button>
+          </div>
+          <div id="setterOverrideForm" style="display:none; margin-top:14px; border-top:1px solid var(--brand-border); padding-top:14px;"></div>
+        </div>
+
         <div class="card" style="margin-bottom:20px;">
           <p class="section-title">Funds Received <span style="font-weight:400; text-transform:none; font-size:12px;">— money POWERED actually receives from the installer</span></p>
           <div id="fundsReceivedBox"></div>
@@ -259,11 +276,6 @@ function renderFull() {
         <div class="card" style="margin-bottom:20px;">
           <p class="section-title">Approval Gate</p>
           <div id="approvalBox"></div>
-        </div>
-
-        <div class="card" style="margin-bottom:20px;">
-          <p class="section-title">Payment Status</p>
-          <div id="paymentBox"></div>
         </div>
 
         <div class="card" style="margin-bottom:20px;">
@@ -339,6 +351,9 @@ function populateFields() {
   document.getElementById('f_original_estimate_amount').value = d.original_estimate_amount ?? '';
 }
 
+// Receipt/Proof is admin-only internal documentation — it's never sent to any rep-facing
+// route (those only ever get computeAdderCategoryTotals() output), so there's no risk of a
+// rep seeing this regardless of what's rendered here.
 function renderAdders() {
   const list = document.getElementById('addersList');
   if (!DEAL.adders.length) {
@@ -355,6 +370,14 @@ function renderAdders() {
           <input type="checkbox" class="a-hardcost" ${a.counts_as_hard_cost ? 'checked' : ''} style="width:auto;">Counts toward PPW
         </label>
         <button class="icon-btn a-delete" title="Remove">✕</button>
+      </div>
+      <div class="adder-receipt-row" data-id="${a.id}" style="display:flex; align-items:center; gap:8px; margin:-4px 0 10px 2px; font-size:12px; flex-wrap:wrap;">
+        <span style="color:var(--brand-muted); font-weight:600;">Receipt / Proof:</span>
+        ${a.receiptFile
+          ? `<a href="/api/deals/${dealId}/adders/${a.id}/file" target="_blank" rel="noopener">${a.receiptFile.file_name}</a><button class="icon-btn a-receipt-remove" title="Remove" style="padding:0 4px;">✕</button>`
+          : '<span style="color:var(--brand-muted);">No file attached</span>'}
+        <input type="file" class="a-receipt-input" style="font-size:11px; max-width:150px; margin:0;">
+        <button class="btn secondary small a-receipt-upload" style="width:auto; padding:3px 10px; font-size:11px;">${a.receiptFile ? 'Replace' : 'Attach'}</button>
       </div>
     `).join('');
   }
@@ -380,6 +403,31 @@ function renderAdders() {
         DEAL = await api('DELETE', `/api/deals/${dealId}/adders/${id}`);
         renderAdders();
         renderCalc();
+      } catch (e) { alert(e.message); }
+    });
+  });
+  list.querySelectorAll('.adder-receipt-row').forEach((row) => {
+    const id = row.dataset.id;
+    row.querySelector('.a-receipt-upload').addEventListener('click', async () => {
+      const input = row.querySelector('.a-receipt-input');
+      const file = input.files[0];
+      if (!file) { alert('Choose a file first.'); return; }
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const res = await fetch(`/api/deals/${dealId}/adders/${id}/file`, { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Upload failed');
+        DEAL = data;
+        renderAdders();
+      } catch (e) { alert(e.message); }
+    });
+    const removeBtn = row.querySelector('.a-receipt-remove');
+    if (removeBtn) removeBtn.addEventListener('click', async () => {
+      if (!confirm('Remove this Receipt/Proof file?')) return;
+      try {
+        DEAL = await api('DELETE', `/api/deals/${dealId}/adders/${id}/file`);
+        renderAdders();
       } catch (e) { alert(e.message); }
     });
   });
@@ -417,41 +465,77 @@ function wireCalcAmountSaveButtons() {
   });
 }
 
+// Closer and Setter are computed from the same shared upstream inputs (Net PPW, Gross, Pay
+// Scale Rate, Rep Pool) but are otherwise independent from here down — separate totals,
+// separate overrides, separate approval for each role's own view. Cashback/Advance/Other
+// deductions only ever touch the Closer's number, matching the engine's existing rule that
+// the setter is never touched by any deduction.
+const CLOSER_CALC_FIELDS = ['net_ppw', 'gross_amount', 'pay_scale_rate', 'rep_pool', 'closer_pay_gross', 'closer_pay_net'];
+const SETTER_CALC_FIELDS = ['setter_pay'];
+
+function lockedFieldsFor(fieldList) {
+  try { return JSON.parse(DEAL.overridden_fields || '[]').filter((f) => fieldList.includes(f)); } catch (e) { return []; }
+}
+
+function overrideBadgeHtml(lockedFields) {
+  if (!lockedFields.length) return '';
+  const reasonsMap = (() => { try { return JSON.parse(DEAL.field_override_reasons || '{}'); } catch (e) { return {}; } })();
+  const reasons = Array.from(new Set(lockedFields.map((f) => reasonsMap[f]).filter(Boolean)));
+  return `<div class="badge amber" style="margin-top:10px;">Manual override active${reasons.length ? ': ' + reasons.join('; ') : ''}</div>`;
+}
+
+function approvalBadgeFor(role) {
+  const d = DEAL;
+  const approved = role === 'closer' ? d.closer_breakdown_approved : d.setter_breakdown_approved;
+  const label = role === 'closer' ? "Closer's" : "Setter's";
+  return approved
+    ? `<span class="badge ${role === 'closer' ? 'green' : 'amber'}">Approved for ${label} view</span>`
+    : `<span class="badge muted">Not yet approved for ${label} view</span>`;
+}
+
 function renderCalc() {
+  renderCloserCalc();
+  renderSetterCalc();
+  renderFundsReceived();
+}
+
+function renderCloserCalc() {
   const d = DEAL;
   let html = '';
   if (d.below_floor) {
     html += `<div class="error-msg show" style="margin-bottom:14px;">Below the pay-scale hard floor — needs manual approval before any commission is paid.</div>`;
   }
+  html += `<div style="margin-bottom:10px;">${approvalBadgeFor('closer')}</div>`;
   html += calcRow('System Size', d.system_size_kw ? `${d.system_size_kw} kW` : '—');
   html += calcRow('Net PPW', d.net_ppw ?? '—');
   html += calcRow('Gross', fmtMoney(d.gross_amount));
   html += calcRow('Pay Scale Rate', d.pay_scale_rate ? `$${d.pay_scale_rate}/kW` : '—');
   html += calcRow('Rep Pool', fmtMoney(d.rep_pool));
   html += calcRow('Closer Pay (gross)', fmtMoney(d.closer_pay_gross));
-  html += calcRow('Cashback Deduction', d.cashback_amount ? `−${fmtMoney(d.cashback_amount * 0.5)}` : '$0.00');
-  html += calcRow('Closer Pay (net)', fmtMoney(d.closer_pay_net), { total: true });
-  if (d.setter_rep_id) html += calcRow('Setter Pay', fmtMoney(d.setter_pay), { total: true });
+  if (d.cashback_amount) html += calcRow('Cashback Deduction', `−${fmtMoney(d.cashback_amount * 0.5)}`);
   html += calcEditableRow('Advance Deduction', d.advance_deduction, 'advance_deduction');
   html += calcEditableRow('Deduction (Other)', d.deduction_other, 'deduction_other');
-  const total = round2(
-    (d.closer_pay_net || 0) + (d.setter_rep_id ? (d.setter_pay || 0) : 0) - (d.advance_deduction || 0) - (d.deduction_other || 0)
-  );
-  html += calcRow('Total', fmtMoney(total), { total: true });
-  // Only fields this Calculator actually shows — so an override saved elsewhere (e.g. Joey's
-  // Bonus in Payment Status) never shows its reason here, and vice versa.
-  const CALC_FIELDS = ['net_ppw', 'pay_scale_rate', 'rep_pool', 'closer_pay_gross', 'closer_pay_net', 'setter_pay', 'gross_amount'];
-  let lockedCalcFields = [];
-  try { lockedCalcFields = JSON.parse(d.overridden_fields || '[]').filter((f) => CALC_FIELDS.includes(f)); } catch (e) { /* ignore */ }
-  if (lockedCalcFields.length) {
-    const reasonsMap = (() => { try { return JSON.parse(d.field_override_reasons || '{}'); } catch (e) { return {}; } })();
-    const reasons = Array.from(new Set(lockedCalcFields.map((f) => reasonsMap[f]).filter(Boolean)));
-    html += `<div class="badge amber" style="margin-top:10px;">Manual override active${reasons.length ? ': ' + reasons.join('; ') : ''}</div>`;
-  }
-  document.getElementById('calcLines').innerHTML = html;
-  document.getElementById('overrideBtn').textContent = d.manual_override ? 'Edit Override' : 'Manual Override';
+  html += calcRow('Closer Pay (net)', fmtMoney(d.closer_pay_net), { total: true });
+  html += overrideBadgeHtml(lockedFieldsFor(CLOSER_CALC_FIELDS));
+  document.getElementById('closerCalcLines').innerHTML = html;
+  document.getElementById('closerOverrideBtn').textContent = lockedFieldsFor(CLOSER_CALC_FIELDS).length ? 'Edit Override' : 'Manual Override';
   wireCalcAmountSaveButtons();
-  renderFundsReceived();
+}
+
+function renderSetterCalc() {
+  const d = DEAL;
+  const card = document.getElementById('setterCalcCard');
+  card.style.display = d.setter_rep_id ? 'block' : 'none';
+  if (!d.setter_rep_id) return;
+  let html = '';
+  html += `<div style="margin-bottom:10px;">${approvalBadgeFor('setter')}</div>`;
+  html += calcRow('Net PPW', d.net_ppw ?? '—');
+  html += calcRow('Pay Scale Rate', d.pay_scale_rate ? `$${d.pay_scale_rate}/kW` : '—');
+  html += calcRow('Rep Pool', fmtMoney(d.rep_pool));
+  html += calcRow('Setter Pay', fmtMoney(d.setter_pay), { total: true });
+  html += overrideBadgeHtml(lockedFieldsFor(SETTER_CALC_FIELDS));
+  document.getElementById('setterCalcLines').innerHTML = html;
+  document.getElementById('setterOverrideBtn').textContent = lockedFieldsFor(SETTER_CALC_FIELDS).length ? 'Edit Override' : 'Manual Override';
 }
 
 // `parseFloat(x) || null` turns an explicit 0 into null, since 0 is falsy in JS — every plain
@@ -737,6 +821,146 @@ function renderAudit() {
   `).join('');
 }
 
+function wireCloserOverrideForm() {
+  let overrideMode = false;
+  document.getElementById('closerOverrideBtn').addEventListener('click', () => {
+    overrideMode = !overrideMode;
+    const box = document.getElementById('closerOverrideForm');
+    if (!overrideMode) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    const d = DEAL;
+    const isLocked = lockedFieldsFor(CLOSER_CALC_FIELDS).length > 0;
+    box.style.display = 'block';
+    box.innerHTML = `
+      <p style="font-size:12px; color:var(--brand-muted); margin-top:0;">
+        Every field here is optional — leave blank to keep it as-is. Typing a Pay Scale Rate
+        auto-fills Rep Pool / Closer Pay (gross) / Closer Pay (net) below (still editable afterward).
+      </p>
+      <label>Net PPW <span style="color:var(--brand-muted); font-weight:400;">(current: ${d.net_ppw ?? '—'})</span></label>
+      <input type="number" step="0.0001" id="ov_net_ppw" placeholder="leave blank to keep current">
+      <label>Gross <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.gross_amount)})</span></label>
+      <input type="number" step="0.01" id="ov_gross_amount" placeholder="leave blank to keep current">
+      <label>Pay Scale Rate ($/kW) <span style="color:var(--brand-muted); font-weight:400;">(current: ${d.pay_scale_rate ?? '—'})</span></label>
+      <input type="number" step="0.01" id="ov_pay_scale_rate" placeholder="leave blank to keep current">
+      <label>Rep Pool <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.rep_pool)})</span></label>
+      <input type="number" step="0.01" id="ov_rep_pool" placeholder="leave blank to keep current">
+      <label>Closer Pay (gross) <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.closer_pay_gross)})</span></label>
+      <input type="number" step="0.01" id="ov_closer_pay_gross" placeholder="leave blank to keep current">
+      <label>Closer Pay (net) <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.closer_pay_net)})</span></label>
+      <input type="number" step="0.01" id="ov_closer_pay_net" placeholder="leave blank to keep current">
+      <label>Reason for override (required)</label><textarea id="ov_reason" rows="2"></textarea>
+      <div style="display:flex; gap:8px;">
+        <button class="btn small" id="saveCloserOverrideBtn" style="width:auto;">Save Override</button>
+        ${isLocked ? '<button class="btn secondary small" id="clearCloserOverrideBtn" style="width:auto;">Turn Off &amp; Recalculate</button>' : ''}
+      </div>
+    `;
+    // Once Joy types into one of these herself, a later tweak to Pay Scale Rate (fixing a typo,
+    // say) should never silently overwrite what she just typed — auto-fill only ever applies to
+    // a field she hasn't manually touched yet.
+    const userEdited = { rep_pool: false, closer_pay_gross: false, closer_pay_net: false };
+    ['ov_rep_pool', 'ov_closer_pay_gross', 'ov_closer_pay_net'].forEach((inputId) => {
+      const field = inputId.slice(3);
+      document.getElementById(inputId).addEventListener('input', () => { userEdited[field] = true; });
+    });
+    document.getElementById('ov_pay_scale_rate').addEventListener('input', (e) => {
+      const rate = parseFloat(e.target.value);
+      if (isNaN(rate) || !SETTINGS) return;
+      const kw = DEAL.system_size_kw || 0;
+      const paySplit = DEAL.pay_split || 0.5;
+      const pool = rate * kw * paySplit;
+      const hasSetter = !!DEAL.setter_rep_id;
+      const closerPayGross = hasSetter ? pool * SETTINGS.closer_split_pct : pool;
+      const cashbackDeduction = (DEAL.cashback_amount || 0) * SETTINGS.cashback_split_pct;
+      const advanceDeduction = DEAL.advance_deduction || 0;
+      const otherDeduction = DEAL.deduction_other || 0;
+      const closerNet = closerPayGross - cashbackDeduction - advanceDeduction - otherDeduction;
+      if (!userEdited.rep_pool) document.getElementById('ov_rep_pool').value = round2(pool);
+      if (!userEdited.closer_pay_gross) document.getElementById('ov_closer_pay_gross').value = round2(closerPayGross);
+      if (!userEdited.closer_pay_net) document.getElementById('ov_closer_pay_net').value = round2(closerNet);
+    });
+    document.getElementById('saveCloserOverrideBtn').addEventListener('click', async () => {
+      const reason = val('ov_reason');
+      if (!reason) { alert('Please give a reason for the override — this is logged for the audit trail.'); return; }
+      try {
+        DEAL = await api('POST', `/api/deals/${dealId}/override`, {
+          override: true,
+          reason,
+          fields: {
+            net_ppw: floatval('ov_net_ppw'),
+            gross_amount: floatval('ov_gross_amount'),
+            pay_scale_rate: floatval('ov_pay_scale_rate'),
+            rep_pool: floatval('ov_rep_pool'),
+            closer_pay_gross: floatval('ov_closer_pay_gross'),
+            closer_pay_net: floatval('ov_closer_pay_net')
+          }
+        });
+        overrideMode = false;
+        box.style.display = 'none';
+        renderCalc();
+        renderAudit();
+      } catch (e) { alert(e.message); }
+    });
+    const clearBtn = document.getElementById('clearCloserOverrideBtn');
+    if (clearBtn) clearBtn.addEventListener('click', async () => {
+      if (!confirm('This will discard the Closer override and replace it with freshly computed numbers. This cannot be undone — continue?')) return;
+      try {
+        DEAL = await api('POST', `/api/deals/${dealId}/override`, { override: false, fields: CLOSER_CALC_FIELDS, reason: 'Closer override removed' });
+        DEAL = await api('POST', `/api/deals/${dealId}/recalculate`, {});
+        overrideMode = false;
+        box.style.display = 'none';
+        renderCalc();
+        renderAudit();
+      } catch (e) { alert(e.message); }
+    });
+  });
+}
+
+function wireSetterOverrideForm() {
+  let overrideMode = false;
+  document.getElementById('setterOverrideBtn').addEventListener('click', () => {
+    overrideMode = !overrideMode;
+    const box = document.getElementById('setterOverrideForm');
+    if (!overrideMode) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    const d = DEAL;
+    const isLocked = lockedFieldsFor(SETTER_CALC_FIELDS).length > 0;
+    box.style.display = 'block';
+    box.innerHTML = `
+      <p style="font-size:12px; color:var(--brand-muted); margin-top:0;">Leave blank to keep the current value.</p>
+      <label>Setter Pay <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.setter_pay)})</span></label>
+      <input type="number" step="0.01" id="ov_setter_pay_only" placeholder="leave blank to keep current">
+      <label>Reason for override (required)</label><textarea id="ov_setter_reason" rows="2"></textarea>
+      <div style="display:flex; gap:8px;">
+        <button class="btn small" id="saveSetterOverrideBtn" style="width:auto;">Save Override</button>
+        ${isLocked ? '<button class="btn secondary small" id="clearSetterOverrideBtn" style="width:auto;">Turn Off &amp; Recalculate</button>' : ''}
+      </div>
+    `;
+    document.getElementById('saveSetterOverrideBtn').addEventListener('click', async () => {
+      const reason = val('ov_setter_reason');
+      if (!reason) { alert('Please give a reason for the override — this is logged for the audit trail.'); return; }
+      const value = floatval('ov_setter_pay_only');
+      if (value === null) { alert('Enter a Setter Pay amount.'); return; }
+      try {
+        DEAL = await api('POST', `/api/deals/${dealId}/override`, { override: true, reason, fields: { setter_pay: value } });
+        overrideMode = false;
+        box.style.display = 'none';
+        renderCalc();
+        renderAudit();
+      } catch (e) { alert(e.message); }
+    });
+    const clearBtn = document.getElementById('clearSetterOverrideBtn');
+    if (clearBtn) clearBtn.addEventListener('click', async () => {
+      if (!confirm('This will discard the Setter override and replace it with a freshly computed number. This cannot be undone — continue?')) return;
+      try {
+        DEAL = await api('POST', `/api/deals/${dealId}/override`, { override: false, fields: SETTER_CALC_FIELDS, reason: 'Setter override removed' });
+        DEAL = await api('POST', `/api/deals/${dealId}/recalculate`, {});
+        overrideMode = false;
+        box.style.display = 'none';
+        renderCalc();
+        renderAudit();
+      } catch (e) { alert(e.message); }
+    });
+  });
+}
+
 function wireEvents() {
   document.getElementById('f_is_referral').addEventListener('change', (e) => {
     document.getElementById('f_pay_split').value = e.target.checked ? 0.75 : 0.50;
@@ -764,7 +988,7 @@ function wireEvents() {
 
   document.getElementById('recalcBtn').addEventListener('click', (e) => guardedClick(e.target, 'Recalculating…', async () => {
     if (DEAL.manual_override) {
-      alert('This deal has a manual override active, so Recalculate won\'t touch it — your saved numbers are safe. To discard the override and recompute from scratch, use "Edit Override" → "Turn Off & Recalculate" instead.');
+      alert('This deal has a manual override active on one or more fields, so Recalculate won\'t touch those — your saved numbers are safe. To discard a specific override and recompute it fresh, use that calculator\'s "Edit Override" → "Turn Off & Recalculate" instead.');
       return;
     }
     try {
@@ -781,97 +1005,8 @@ function wireEvents() {
     } catch (e2) { alert(e2.message); }
   }));
 
-  document.getElementById('overrideBtn').addEventListener('click', () => {
-    overrideMode = !overrideMode;
-    const box = document.getElementById('overrideForm');
-    if (!overrideMode) { box.style.display = 'none'; box.innerHTML = ''; return; }
-    const d = DEAL;
-    box.style.display = 'block';
-    box.innerHTML = `
-      <p style="font-size:12px; color:var(--brand-muted); margin-top:0;">
-        Every field here is optional — leave blank to keep it as-is. Typing a Pay Scale Rate auto-fills
-        Rep Pool / Closer Pay (gross) / Closer Pay (net) / Setter Pay below (still editable afterward).
-      </p>
-      <label>Net PPW <span style="color:var(--brand-muted); font-weight:400;">(current: ${d.net_ppw ?? '—'})</span></label>
-      <input type="number" step="0.0001" id="ov_net_ppw" placeholder="leave blank to keep current">
-      <label>Gross <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.gross_amount)})</span></label>
-      <input type="number" step="0.01" id="ov_gross_amount" placeholder="leave blank to keep current">
-      <label>Pay Scale Rate ($/kW) <span style="color:var(--brand-muted); font-weight:400;">(current: ${d.pay_scale_rate ?? '—'})</span></label>
-      <input type="number" step="0.01" id="ov_pay_scale_rate" placeholder="leave blank to keep current">
-      <label>Rep Pool <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.rep_pool)})</span></label>
-      <input type="number" step="0.01" id="ov_rep_pool" placeholder="leave blank to keep current">
-      <label>Closer Pay (gross) <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.closer_pay_gross)})</span></label>
-      <input type="number" step="0.01" id="ov_closer_pay_gross" placeholder="leave blank to keep current">
-      <label>Closer Pay (net) <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.closer_pay_net)})</span></label>
-      <input type="number" step="0.01" id="ov_closer_pay_net" placeholder="leave blank to keep current">
-      <label>Setter Pay <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.setter_pay)})</span></label>
-      <input type="number" step="0.01" id="ov_setter_pay" placeholder="leave blank to keep current">
-      <label>Reason for override (required)</label><textarea id="ov_reason" rows="2"></textarea>
-      <div style="display:flex; gap:8px;">
-        <button class="btn small" id="saveOverrideBtn" style="width:auto;">Save Override</button>
-        ${d.manual_override ? '<button class="btn secondary small" id="clearOverrideBtn" style="width:auto;">Turn Off &amp; Recalculate</button>' : ''}
-      </div>
-    `;
-    // Once Joy types into one of these herself, a later tweak to Pay Scale Rate (fixing a typo,
-    // say) should never silently overwrite what she just typed — auto-fill only ever applies to
-    // a field she hasn't manually touched yet.
-    const userEdited = { rep_pool: false, closer_pay_gross: false, closer_pay_net: false, setter_pay: false };
-    ['ov_rep_pool', 'ov_closer_pay_gross', 'ov_closer_pay_net', 'ov_setter_pay'].forEach((inputId) => {
-      const field = inputId.slice(3);
-      document.getElementById(inputId).addEventListener('input', () => { userEdited[field] = true; });
-    });
-    document.getElementById('ov_pay_scale_rate').addEventListener('input', (e) => {
-      const rate = parseFloat(e.target.value);
-      if (isNaN(rate) || !SETTINGS) return;
-      const kw = DEAL.system_size_kw || 0;
-      const paySplit = DEAL.pay_split || 0.5;
-      const pool = rate * kw * paySplit;
-      const hasSetter = !!DEAL.setter_rep_id;
-      const setterPay = hasSetter ? pool * SETTINGS.setter_split_pct : 0;
-      const closerPayGross = hasSetter ? pool * SETTINGS.closer_split_pct : pool;
-      const cashbackDeduction = (DEAL.cashback_amount || 0) * SETTINGS.cashback_split_pct;
-      const closerNet = closerPayGross - cashbackDeduction;
-      if (!userEdited.rep_pool) document.getElementById('ov_rep_pool').value = round2(pool);
-      if (!userEdited.closer_pay_gross) document.getElementById('ov_closer_pay_gross').value = round2(closerPayGross);
-      if (!userEdited.closer_pay_net) document.getElementById('ov_closer_pay_net').value = round2(closerNet);
-      if (!userEdited.setter_pay) document.getElementById('ov_setter_pay').value = round2(setterPay);
-    });
-    document.getElementById('saveOverrideBtn').addEventListener('click', async () => {
-      const reason = val('ov_reason');
-      if (!reason) { alert('Please give a reason for the override — this is logged for the audit trail.'); return; }
-      try {
-        DEAL = await api('POST', `/api/deals/${dealId}/override`, {
-          override: true,
-          reason,
-          fields: {
-            net_ppw: floatval('ov_net_ppw'),
-            gross_amount: floatval('ov_gross_amount'),
-            pay_scale_rate: floatval('ov_pay_scale_rate'),
-            rep_pool: floatval('ov_rep_pool'),
-            closer_pay_gross: floatval('ov_closer_pay_gross'),
-            closer_pay_net: floatval('ov_closer_pay_net'),
-            setter_pay: floatval('ov_setter_pay')
-          }
-        });
-        overrideMode = false;
-        box.style.display = 'none';
-        renderCalc();
-        renderAudit();
-      } catch (e) { alert(e.message); }
-    });
-    const clearBtn = document.getElementById('clearOverrideBtn');
-    if (clearBtn) clearBtn.addEventListener('click', async () => {
-      if (!confirm('This will discard the manual override and replace it with freshly computed numbers. This cannot be undone — continue?')) return;
-      try {
-        DEAL = await api('POST', `/api/deals/${dealId}/override`, { override: false, reason: 'Override removed' });
-        DEAL = await api('POST', `/api/deals/${dealId}/recalculate`, { force: true });
-        overrideMode = false;
-        box.style.display = 'none';
-        renderCalc();
-        renderAudit();
-      } catch (e) { alert(e.message); }
-    });
-  });
+  wireCloserOverrideForm();
+  wireSetterOverrideForm();
 
   document.getElementById('backBtn').addEventListener('click', () => { window.location.href = '/admin/board.html'; });
 

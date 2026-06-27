@@ -12,30 +12,18 @@
 <script>renderRepShell('/rep/jobs.html');</script>
 <script>
 const jobId = new URLSearchParams(window.location.search).get('id');
-const REROOF_CATEGORY = 'reroof_sow';
-function round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
+function fmtRate(n) { return (n === null || n === undefined || n === '') ? '—' : '$' + Number(n).toFixed(3); }
+function fmtPct(n) { return (n === null || n === undefined || n === '') ? '—' : Number(n).toFixed(2) + '%'; }
 
-// Matches the real Project Breakdown sheet's two-column layout: Hardware Adders (MPU,
-// Battery, Misc, Permit, Other) on the left, Reroof Cost (SOW) on the right, each with a total.
-function renderAdders(adders) {
-  const hardware = adders.filter((a) => a.category !== REROOF_CATEGORY);
-  const reroof = adders.filter((a) => a.category === REROOF_CATEGORY);
-  const hardwareTotal = round2(hardware.reduce((s, a) => s + (a.amount || 0), 0));
-  const reroofTotal = round2(reroof.reduce((s, a) => s + (a.amount || 0), 0));
-  const line = (a) => `<div class="detail-row"><span class="lbl">${a.label}</span><span class="val">${fmtMoney(a.amount)}</span></div>`;
+// Classification totals only — never an individual item's label/description, and "Other"
+// never appears as its own line (it's folded into Miscellaneous server-side).
+function renderAdderTotals(totals) {
   return `
-    <div style="display:flex; gap:14px; flex-wrap:wrap;">
-      <div style="flex:1; min-width:160px;">
-        <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--brand-muted); margin-bottom:4px;">Hardware Adders</div>
-        ${hardware.length === 0 ? '<div class="detail-row"><span class="lbl">—</span><span class="val">$0.00</span></div>' : hardware.map(line).join('')}
-        <div class="detail-row" style="font-weight:700; border-top:2px solid var(--brand-ink); margin-top:4px;"><span class="lbl">Hardware Total</span><span class="val">${fmtMoney(hardwareTotal)}</span></div>
-      </div>
-      <div style="flex:1; min-width:160px;">
-        <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--brand-muted); margin-bottom:4px;">Reroof Cost</div>
-        ${reroof.length === 0 ? '<div class="detail-row"><span class="lbl">—</span><span class="val">$0.00</span></div>' : reroof.map(line).join('')}
-        <div class="detail-row" style="font-weight:700; border-top:2px solid var(--brand-ink); margin-top:4px;"><span class="lbl">Reroof Total</span><span class="val">${fmtMoney(reroofTotal)}</span></div>
-      </div>
-    </div>
+    <div class="detail-row"><span class="lbl">MPU</span><span class="val">${fmtMoney(totals.mpu)}</span></div>
+    <div class="detail-row"><span class="lbl">Battery</span><span class="val">${fmtMoney(totals.battery)}</span></div>
+    <div class="detail-row"><span class="lbl">Permit</span><span class="val">${fmtMoney(totals.permit)}</span></div>
+    <div class="detail-row"><span class="lbl">Miscellaneous</span><span class="val">${fmtMoney(totals.misc)}</span></div>
+    <div class="detail-row" style="font-weight:700; border-top:2px solid var(--brand-ink); margin-top:4px;"><span class="lbl">Roofing Total</span><span class="val">${fmtMoney(totals.reroof_sow)}</span></div>
   `;
 }
 
@@ -61,25 +49,25 @@ async function load() {
       <div class="detail-row"><span class="lbl">Setter</span><span class="val">${j.setter_display || '—'}</span></div>
       <div class="detail-row"><span class="lbl">Status</span><span class="val">${j.status_label || '—'}</span></div>
       <div class="detail-row"><span class="lbl">Date Signed</span><span class="val">${fmtDate(j.date_signed)}</span></div>
-      <div class="detail-row"><span class="lbl">Install Date</span><span class="val">${fmtDate(j.install_date)}</span></div>
+      <div class="detail-row"><span class="lbl">Solar Date</span><span class="val">${fmtDate(j.install_completed_date)}</span></div>
     </div>
 
     <div class="detail-section">
       <p class="section-title" style="margin-top:0;">System &amp; Finance</p>
       <div class="detail-row"><span class="lbl">System Size</span><span class="val">${j.system_size_kw ? j.system_size_kw + ' kW' : '—'}</span></div>
-      <div class="detail-row"><span class="lbl"># Batteries</span><span class="val">${j.num_batteries ?? '—'}</span></div>
-      <div class="detail-row"><span class="lbl">Battery Type</span><span class="val">${j.battery_type || '—'}</span></div>
+      <div class="detail-row"><span class="lbl">Module Type</span><span class="val">${j.module_type || '—'}</span></div>
       <div class="detail-row"><span class="lbl">Annual Production</span><span class="val">${j.annual_production_kwh ? j.annual_production_kwh.toLocaleString() + ' kWh' : '—'}</span></div>
+      <div class="detail-row"><span class="lbl"># of Batteries</span><span class="val">${j.num_batteries ?? '—'}</span></div>
+      <div class="detail-row"><span class="lbl">Battery Type</span><span class="val">${j.battery_type || '—'}</span></div>
       <div class="detail-row"><span class="lbl">Total Contract</span><span class="val">${fmtMoney(j.contract_value)}</span></div>
       <div class="detail-row"><span class="lbl">Monthly Payment</span><span class="val">${fmtMoney(j.monthly_payment)}</span></div>
-      <div class="detail-row"><span class="lbl">Rate per kWh</span><span class="val">${j.rate_per_kwh ?? '—'}</span></div>
-      <div class="detail-row"><span class="lbl">Escalator</span><span class="val">${j.escalator_pct !== null && j.escalator_pct !== undefined ? j.escalator_pct + '%' : '—'}</span></div>
-      <div class="detail-row"><span class="lbl">Installer · Financier</span><span class="val">${j.installer_name || '—'} · ${j.financier_name || '—'}</span></div>
+      <div class="detail-row"><span class="lbl">Rate per kWh</span><span class="val">${fmtRate(j.rate_per_kwh)}</span></div>
+      <div class="detail-row"><span class="lbl">Escalator</span><span class="val">${fmtPct(j.escalator_pct)}</span></div>
     </div>
 
     <div class="detail-section">
       <p class="section-title" style="margin-top:0;">Project Adders</p>
-      ${renderAdders(j.adders || [])}
+      ${renderAdderTotals(j.adderCategoryTotals || {})}
     </div>
 
     <div class="detail-section">
@@ -87,10 +75,10 @@ async function load() {
       ${j.below_floor ? `<div class="error-msg show">This deal is below the pay-scale floor — pay is pending manual review.</div>` : ''}
       <div class="detail-row"><span class="lbl">Net PPW</span><span class="val">${j.net_ppw ?? '—'}</span></div>
       <div class="detail-row"><span class="lbl">Pay Scale</span><span class="val">${j.pay_scale_rate ? '$' + j.pay_scale_rate + '/kW' : '—'}</span></div>
-      ${isCloser ? `
-        <div class="detail-row"><span class="lbl">Gross Pay</span><span class="val">${fmtMoney(j.payGross)}</span></div>
-        <div class="detail-row"><span class="lbl">Cashback Deduction</span><span class="val">−${fmtMoney(j.cashbackDeduction)}</span></div>
-      ` : ''}
+      ${isCloser ? `<div class="detail-row"><span class="lbl">Gross Pay</span><span class="val">${fmtMoney(j.payGross)}</span></div>` : ''}
+      ${j.cashbackDeduction ? `<div class="detail-row"><span class="lbl">Cashback Deduction</span><span class="val">−${fmtMoney(j.cashbackDeduction)}</span></div>` : ''}
+      ${j.advanceDeduction ? `<div class="detail-row"><span class="lbl">Advance Deduction</span><span class="val">−${fmtMoney(j.advanceDeduction)}</span></div>` : ''}
+      ${j.otherDeduction ? `<div class="detail-row"><span class="lbl">Other Deduction</span><span class="val">−${fmtMoney(j.otherDeduction)}</span></div>` : ''}
       <div class="detail-row" style="border-top:2px solid var(--brand-ink); padding-top:10px; margin-top:4px;">
         <span class="lbl" style="font-weight:700; color:var(--brand-ink);">${isCloser ? 'Your Pay (net)' : 'Your Pay'}</span>
         <span class="val" style="font-size:18px;">${fmtMoney(j.payAmount)}</span>
