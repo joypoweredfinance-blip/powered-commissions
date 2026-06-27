@@ -30,6 +30,13 @@ async function visibleDeals(repId) {
 // Strips fields the viewing rep shouldn't see (the other party's pay, admin-only notes/overrides).
 // Only ever called on rows already filtered by visibleDeals(), so viewRole is guaranteed to be
 // 'closer' or 'setter' here, never null — never call this on an unfiltered deal row.
+//
+// Setters are paid before the deal is funded and before real costs are final, so their entire
+// view of "what this job is worth" — Contract Value, System Size, Rate/kWh, Monthly Payment,
+// Net PPW, Pay Scale, and every adder category — comes from Joy's separate setter_calc_* fields,
+// never the deal's real (and still-changing) numbers. Physical/descriptive fields that aren't
+// part of that financial estimate (Module Type, Battery Type, panel counts, production,
+// escalator) still reflect the real deal, since those were never described as preliminary.
 function shapeForRole(deal) {
   // Installer/Financier and a raw total_adders figure are deliberately left out — no rep-facing
   // page renders them anymore (category totals replaced total_adders; Installer/Financier was
@@ -39,11 +46,9 @@ function shapeForRole(deal) {
     id: deal.id, customer_name: deal.customer_name, customer_address: deal.customer_address,
     status_label: deal.status_label,
     module_type: deal.module_type, battery_type: deal.battery_type, num_batteries: deal.num_batteries,
-    system_size_kw: deal.system_size_kw, panel_count: deal.panel_count, panel_watts: deal.panel_watts,
-    annual_production_kwh: deal.annual_production_kwh, contract_value: deal.contract_value,
-    monthly_payment: deal.monthly_payment, rate_per_kwh: deal.rate_per_kwh, escalator_pct: deal.escalator_pct,
+    panel_count: deal.panel_count, panel_watts: deal.panel_watts,
+    annual_production_kwh: deal.annual_production_kwh, escalator_pct: deal.escalator_pct,
     date_signed: deal.date_signed, install_date: deal.install_date, install_completed_date: deal.install_completed_date,
-    net_ppw: deal.net_ppw, pay_scale_rate: deal.pay_scale_rate, below_floor: deal.below_floor,
     closer_display: deal.closer_display || deal.closer_name,
     setter_display: deal.setter_display || deal.setter_name,
     viewRole: deal.viewRole
@@ -51,6 +56,9 @@ function shapeForRole(deal) {
   if (deal.viewRole === 'closer') {
     return {
       ...shared,
+      system_size_kw: deal.system_size_kw, contract_value: deal.contract_value,
+      monthly_payment: deal.monthly_payment, rate_per_kwh: deal.rate_per_kwh,
+      net_ppw: deal.net_ppw, pay_scale_rate: deal.pay_scale_rate, below_floor: deal.below_floor,
       payAmount: deal.closer_pay_net,
       payGross: deal.closer_pay_gross,
       // Each of these is 0 when not applicable — the frontend only renders the row when truthy,
@@ -65,6 +73,9 @@ function shapeForRole(deal) {
   }
   return {
     ...shared,
+    system_size_kw: deal.setter_calc_system_size_kw, contract_value: deal.setter_calc_contract_value,
+    monthly_payment: deal.setter_calc_monthly_payment, rate_per_kwh: deal.setter_calc_rate_per_kwh,
+    net_ppw: deal.setter_calc_net_ppw, pay_scale_rate: deal.setter_calc_pay_scale_rate, below_floor: deal.setter_calc_below_floor,
     payAmount: deal.setter_pay,
     paid: !!deal.setter_paid,
     paidDate: deal.setter_paid_date
@@ -73,7 +84,8 @@ function shapeForRole(deal) {
 
 // Rep-visible classification only — never an individual item's label/description. "Other" is
 // an internal-only classification and folds into Miscellaneous here so reps never see it as
-// its own category.
+// its own category. Only used for the Closer's real adders — the Setter's adder "totals" are
+// just Joy's preliminary MPU/Roof/Battery/Misc numbers directly, see setterAdderTotals() below.
 const REP_ADDER_CATEGORIES = ['reroof_sow', 'mpu', 'battery', 'permit', 'misc'];
 function computeAdderCategoryTotals(adders) {
   const totals = { reroof_sow: 0, mpu: 0, battery: 0, permit: 0, misc: 0 };
@@ -82,6 +94,19 @@ function computeAdderCategoryTotals(adders) {
     if (totals[cat] !== undefined) totals[cat] = round2(totals[cat] + (a.amount || 0));
   }
   return totals;
+}
+
+// The Setter's preliminary "adders" are just Joy's 4 manually-entered numbers, not a real
+// deal_adders breakdown — shaped the same way (reroof_sow/mpu/battery/permit/misc) so the
+// rep-facing detail page can render both roles with the exact same function.
+function setterAdderTotals(deal) {
+  return {
+    reroof_sow: deal.setter_calc_roof_amount || 0,
+    mpu: deal.setter_calc_mpu_amount || 0,
+    battery: deal.setter_calc_battery_amount || 0,
+    permit: 0,
+    misc: deal.setter_calc_misc_amount || 0
+  };
 }
 
 function lastNMonths(n) {
@@ -141,4 +166,4 @@ async function computeRepDashboard(repId) {
   };
 }
 
-module.exports = { viewRoleFor, visibleDeals, shapeForRole, computeAdderCategoryTotals, computeRepDashboard, REP_ADDER_CATEGORIES, round2 };
+module.exports = { viewRoleFor, visibleDeals, shapeForRole, computeAdderCategoryTotals, setterAdderTotals, computeRepDashboard, REP_ADDER_CATEGORIES, round2 };

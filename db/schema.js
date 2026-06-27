@@ -166,6 +166,24 @@ module.exports = [
     -- Total display but are never computed or locked, always Joy's own entry.
     advance_deduction REAL,
     deduction_other REAL,
+    -- Setters are paid about a week after install, before the deal is funded and before real
+    -- costs are final — so their pay is deliberately computed from a separate, manually-entered
+    -- preliminary estimate, frozen at entry, never the real (and still-changing) deal data the
+    -- Closer/Company numbers use. setter_calc_* below are the only inputs that ever feed
+    -- setter_pay; setter_pay itself stays the one column everything downstream (Board, Pay
+    -- Run, Payment Status, the setter's own rep view) already reads.
+    setter_calc_contract_value REAL,
+    setter_calc_mpu_amount REAL,
+    setter_calc_roof_amount REAL,
+    setter_calc_battery_amount REAL,
+    setter_calc_misc_amount REAL,
+    setter_calc_system_size_kw REAL,
+    setter_calc_rate_per_kwh REAL,
+    setter_calc_monthly_payment REAL,
+    setter_calc_net_ppw REAL,
+    setter_calc_pay_scale_rate REAL,
+    setter_calc_rep_pool REAL,
+    setter_calc_below_floor INTEGER NOT NULL DEFAULT 0,
     below_floor INTEGER NOT NULL DEFAULT 0,
     closer_paid INTEGER NOT NULL DEFAULT 0,
     closer_paid_date TEXT,

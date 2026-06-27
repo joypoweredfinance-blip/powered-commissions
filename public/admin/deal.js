@@ -258,10 +258,13 @@ function renderFull() {
         <div class="card" style="margin-bottom:20px; display:none;" id="setterCalcCard">
           <p class="section-title">Setter Commission Calculator</p>
           <p style="font-size:12px; color:var(--brand-muted); margin:-8px 0 12px;">
-            Independent from the Closer calculator — its own override, its own approval for the
-            setter's view, never affected by cashback or the deductions above.
+            Setters are paid about a week after install, before the deal is funded and before
+            real costs are final — so enter your own preliminary numbers below rather than
+            relying on the live Closer/Company data above. This is the only thing that
+            determines Setter Pay, and the only thing the setter ever sees for this job.
           </p>
-          <div id="setterCalcLines"></div>
+          <div id="setterCalcInputs"></div>
+          <div id="setterCalcLines" style="margin-top:14px;"></div>
           <div style="display:flex; gap:8px; margin-top:14px;">
             <button class="btn secondary small" id="setterOverrideBtn"></button>
           </div>
@@ -471,7 +474,7 @@ function wireCalcAmountSaveButtons() {
 // deductions only ever touch the Closer's number, matching the engine's existing rule that
 // the setter is never touched by any deduction.
 const CLOSER_CALC_FIELDS = ['net_ppw', 'gross_amount', 'pay_scale_rate', 'rep_pool', 'closer_pay_gross', 'closer_pay_net'];
-const SETTER_CALC_FIELDS = ['setter_pay'];
+const SETTER_CALC_FIELDS = ['setter_calc_net_ppw', 'setter_calc_pay_scale_rate', 'setter_calc_rep_pool', 'setter_pay'];
 
 function lockedFieldsFor(fieldList) {
   try { return JSON.parse(DEAL.overridden_fields || '[]').filter((f) => fieldList.includes(f)); } catch (e) { return []; }
@@ -496,6 +499,10 @@ function approvalBadgeFor(role) {
 function renderCalc() {
   renderCloserCalc();
   renderSetterCalc();
+  // Wired once, after both cards exist in the DOM — wiring it inside each render function
+  // would double-attach listeners on Closer's buttons (still in the DOM from the first call)
+  // every time the Setter card also rendered.
+  wireCalcAmountSaveButtons();
   renderFundsReceived();
 }
 
@@ -519,19 +526,39 @@ function renderCloserCalc() {
   html += overrideBadgeHtml(lockedFieldsFor(CLOSER_CALC_FIELDS));
   document.getElementById('closerCalcLines').innerHTML = html;
   document.getElementById('closerOverrideBtn').textContent = lockedFieldsFor(CLOSER_CALC_FIELDS).length ? 'Edit Override' : 'Manual Override';
-  wireCalcAmountSaveButtons();
 }
 
+// Entirely separate from the Closer card above — Joy's own preliminary numbers, not the
+// deal's real contract_value/adders/system_size_kw, since the setter gets paid before those
+// are final. These inputs are the ONLY thing that drives setter_pay, and the ONLY thing the
+// setter ever sees for this job.
 function renderSetterCalc() {
   const d = DEAL;
   const card = document.getElementById('setterCalcCard');
   card.style.display = d.setter_rep_id ? 'block' : 'none';
   if (!d.setter_rep_id) return;
+
+  let inputsHtml = '';
+  inputsHtml += calcRow('Customer Name', d.customer_name || '—');
+  inputsHtml += calcRow('Property Address', d.customer_address || '—');
+  inputsHtml += calcEditableRow('Contract Value ($)', d.setter_calc_contract_value, 'setter_calc_contract_value');
+  inputsHtml += calcEditableRow('MPU ($)', d.setter_calc_mpu_amount, 'setter_calc_mpu_amount');
+  inputsHtml += calcEditableRow('Roof ($)', d.setter_calc_roof_amount, 'setter_calc_roof_amount');
+  inputsHtml += calcEditableRow('Battery ($)', d.setter_calc_battery_amount, 'setter_calc_battery_amount');
+  inputsHtml += calcEditableRow('Miscellaneous ($)', d.setter_calc_misc_amount, 'setter_calc_misc_amount');
+  inputsHtml += calcEditableRow('System Size (kW)', d.setter_calc_system_size_kw, 'setter_calc_system_size_kw');
+  inputsHtml += calcEditableRow('Rate per kWh ($)', d.setter_calc_rate_per_kwh, 'setter_calc_rate_per_kwh');
+  inputsHtml += calcEditableRow('Monthly Payment ($)', d.setter_calc_monthly_payment, 'setter_calc_monthly_payment');
+  document.getElementById('setterCalcInputs').innerHTML = inputsHtml;
+
   let html = '';
   html += `<div style="margin-bottom:10px;">${approvalBadgeFor('setter')}</div>`;
-  html += calcRow('Net PPW', d.net_ppw ?? '—');
-  html += calcRow('Pay Scale Rate', d.pay_scale_rate ? `$${d.pay_scale_rate}/kW` : '—');
-  html += calcRow('Rep Pool', fmtMoney(d.rep_pool));
+  if (d.setter_calc_below_floor) {
+    html += `<div class="error-msg show" style="margin-bottom:14px;">Below the pay-scale hard floor on these preliminary numbers — needs manual review before any setter pay is paid.</div>`;
+  }
+  html += calcRow('Net PPW', d.setter_calc_net_ppw ?? '—');
+  html += calcRow('Pay Scale Rate', d.setter_calc_pay_scale_rate ? `$${d.setter_calc_pay_scale_rate}/kW` : '—');
+  html += calcRow('Rep Pool', fmtMoney(d.setter_calc_rep_pool));
   html += calcRow('Setter Pay', fmtMoney(d.setter_pay), { total: true });
   html += overrideBadgeHtml(lockedFieldsFor(SETTER_CALC_FIELDS));
   document.getElementById('setterCalcLines').innerHTML = html;
@@ -924,7 +951,16 @@ function wireSetterOverrideForm() {
     const isLocked = lockedFieldsFor(SETTER_CALC_FIELDS).length > 0;
     box.style.display = 'block';
     box.innerHTML = `
-      <p style="font-size:12px; color:var(--brand-muted); margin-top:0;">Leave blank to keep the current value.</p>
+      <p style="font-size:12px; color:var(--brand-muted); margin-top:0;">
+        Every field here is optional — leave blank to keep it as-is. Typing a Pay Scale Rate
+        auto-fills Rep Pool / Setter Pay below (still editable afterward).
+      </p>
+      <label>Net PPW <span style="color:var(--brand-muted); font-weight:400;">(current: ${d.setter_calc_net_ppw ?? '—'})</span></label>
+      <input type="number" step="0.0001" id="ov_setter_net_ppw" placeholder="leave blank to keep current">
+      <label>Pay Scale Rate ($/kW) <span style="color:var(--brand-muted); font-weight:400;">(current: ${d.setter_calc_pay_scale_rate ?? '—'})</span></label>
+      <input type="number" step="0.01" id="ov_setter_pay_scale_rate" placeholder="leave blank to keep current">
+      <label>Rep Pool <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.setter_calc_rep_pool)})</span></label>
+      <input type="number" step="0.01" id="ov_setter_rep_pool" placeholder="leave blank to keep current">
       <label>Setter Pay <span style="color:var(--brand-muted); font-weight:400;">(current: ${fmtMoney(d.setter_pay)})</span></label>
       <input type="number" step="0.01" id="ov_setter_pay_only" placeholder="leave blank to keep current">
       <label>Reason for override (required)</label><textarea id="ov_setter_reason" rows="2"></textarea>
@@ -933,13 +969,33 @@ function wireSetterOverrideForm() {
         ${isLocked ? '<button class="btn secondary small" id="clearSetterOverrideBtn" style="width:auto;">Turn Off &amp; Recalculate</button>' : ''}
       </div>
     `;
+    const userEdited = { rep_pool: false, pay: false };
+    document.getElementById('ov_setter_rep_pool').addEventListener('input', () => { userEdited.rep_pool = true; });
+    document.getElementById('ov_setter_pay_only').addEventListener('input', () => { userEdited.pay = true; });
+    document.getElementById('ov_setter_pay_scale_rate').addEventListener('input', (e) => {
+      const rate = parseFloat(e.target.value);
+      if (isNaN(rate) || !SETTINGS) return;
+      const kw = DEAL.setter_calc_system_size_kw || 0;
+      const paySplit = DEAL.pay_split || 0.5;
+      const pool = rate * kw * paySplit;
+      const setterPay = pool * SETTINGS.setter_split_pct;
+      if (!userEdited.rep_pool) document.getElementById('ov_setter_rep_pool').value = round2(pool);
+      if (!userEdited.pay) document.getElementById('ov_setter_pay_only').value = round2(setterPay);
+    });
     document.getElementById('saveSetterOverrideBtn').addEventListener('click', async () => {
       const reason = val('ov_setter_reason');
       if (!reason) { alert('Please give a reason for the override — this is logged for the audit trail.'); return; }
-      const value = floatval('ov_setter_pay_only');
-      if (value === null) { alert('Enter a Setter Pay amount.'); return; }
       try {
-        DEAL = await api('POST', `/api/deals/${dealId}/override`, { override: true, reason, fields: { setter_pay: value } });
+        DEAL = await api('POST', `/api/deals/${dealId}/override`, {
+          override: true,
+          reason,
+          fields: {
+            setter_calc_net_ppw: floatval('ov_setter_net_ppw'),
+            setter_calc_pay_scale_rate: floatval('ov_setter_pay_scale_rate'),
+            setter_calc_rep_pool: floatval('ov_setter_rep_pool'),
+            setter_pay: floatval('ov_setter_pay_only')
+          }
+        });
         overrideMode = false;
         box.style.display = 'none';
         renderCalc();

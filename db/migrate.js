@@ -55,7 +55,19 @@ const COLUMN_MIGRATIONS = [
   { table: 'deals', column: 'original_estimate_amount', definition: 'REAL' },
   { table: 'deals', column: 'advance_deduction', definition: 'REAL' },
   { table: 'deals', column: 'deduction_other', definition: 'REAL' },
-  { table: 'deal_estimate_files', column: 'slot', definition: "TEXT NOT NULL DEFAULT 'estimate'" }
+  { table: 'deal_estimate_files', column: 'slot', definition: "TEXT NOT NULL DEFAULT 'estimate'" },
+  { table: 'deals', column: 'setter_calc_contract_value', definition: 'REAL' },
+  { table: 'deals', column: 'setter_calc_mpu_amount', definition: 'REAL' },
+  { table: 'deals', column: 'setter_calc_roof_amount', definition: 'REAL' },
+  { table: 'deals', column: 'setter_calc_battery_amount', definition: 'REAL' },
+  { table: 'deals', column: 'setter_calc_misc_amount', definition: 'REAL' },
+  { table: 'deals', column: 'setter_calc_system_size_kw', definition: 'REAL' },
+  { table: 'deals', column: 'setter_calc_rate_per_kwh', definition: 'REAL' },
+  { table: 'deals', column: 'setter_calc_monthly_payment', definition: 'REAL' },
+  { table: 'deals', column: 'setter_calc_net_ppw', definition: 'REAL' },
+  { table: 'deals', column: 'setter_calc_pay_scale_rate', definition: 'REAL' },
+  { table: 'deals', column: 'setter_calc_rep_pool', definition: 'REAL' },
+  { table: 'deals', column: 'setter_calc_below_floor', definition: 'INTEGER NOT NULL DEFAULT 0' }
 ];
 
 async function columnExists(table, column) {

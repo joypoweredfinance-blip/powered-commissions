@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const dashboardService = require('../services/dashboardService');
 const { get, all } = require('../db/client');
-const { visibleDeals, shapeForRole, computeAdderCategoryTotals, computeRepDashboard } = require('../services/repViewService');
+const { visibleDeals, shapeForRole, computeAdderCategoryTotals, setterAdderTotals, computeRepDashboard } = require('../services/repViewService');
 
 router.get('/overall', async (req, res) => {
   try {
@@ -44,8 +44,10 @@ router.get('/rep/:repId/job/:dealId', async (req, res) => {
     const deals = await visibleDeals(req.params.repId);
     const deal = deals.find((d) => String(d.id) === String(req.params.dealId));
     if (!deal) return res.status(404).json({ error: `Not approved for ${rep.display_name || rep.full_name}'s view yet, or doesn't involve this rep.` });
-    const adders = await all(`SELECT category, amount FROM deal_adders WHERE deal_id = ?`, [deal.id]);
-    res.json({ rep, ...shapeForRole(deal), adderCategoryTotals: computeAdderCategoryTotals(adders) });
+    const adderCategoryTotals = deal.viewRole === 'setter'
+      ? setterAdderTotals(deal)
+      : computeAdderCategoryTotals(await all(`SELECT category, amount FROM deal_adders WHERE deal_id = ?`, [deal.id]));
+    res.json({ rep, ...shapeForRole(deal), adderCategoryTotals });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

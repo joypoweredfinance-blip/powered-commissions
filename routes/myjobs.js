@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { all } = require('../db/client');
-const { visibleDeals, shapeForRole, computeAdderCategoryTotals, computeRepDashboard, round2 } = require('../services/repViewService');
+const { visibleDeals, shapeForRole, computeAdderCategoryTotals, setterAdderTotals, computeRepDashboard, round2 } = require('../services/repViewService');
 
 router.get('/dashboard', async (req, res) => {
   try {
@@ -44,10 +44,12 @@ router.get('/:id', async (req, res) => {
     const deals = await visibleDeals(req.user.rep_id);
     const deal = deals.find((d) => String(d.id) === String(req.params.id));
     if (!deal) return res.status(404).json({ error: 'Job not found or not yet approved for your view.' });
-    // Category totals only — never an individual item's label, which could describe something
-    // internal (e.g. a specific receipt line) that's none of the rep's business.
-    const adders = await all(`SELECT category, amount FROM deal_adders WHERE deal_id = ?`, [deal.id]);
-    res.json({ ...shapeForRole(deal), adderCategoryTotals: computeAdderCategoryTotals(adders) });
+    // Setter's "adders" are Joy's preliminary numbers (no DB lookup needed) — the Closer's are
+    // category totals only, never an individual item's label or which receipt backs it up.
+    const adderCategoryTotals = deal.viewRole === 'setter'
+      ? setterAdderTotals(deal)
+      : computeAdderCategoryTotals(await all(`SELECT category, amount FROM deal_adders WHERE deal_id = ?`, [deal.id]));
+    res.json({ ...shapeForRole(deal), adderCategoryTotals });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

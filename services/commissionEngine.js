@@ -114,6 +114,32 @@ function calculateRepCommission({ deal, adders, payScale, settings }) {
   };
 }
 
+/**
+ * Setters are paid about a week after install — before the deal is funded and before real
+ * costs are final — so their pay is computed from a separate, manually-entered preliminary
+ * estimate (Joy's own numbers, frozen at entry), reusing the exact same formula as the real
+ * calculation but never touching the deal's actual contract_value/adders/system_size_kw.
+ * @param {object} inputs - contractValue, mpuAmount, roofAmount, batteryAmount, miscAmount,
+ *   systemSizeKw, paySplit
+ * @param {object} payScale - same shape as calculateRepCommission's payScale
+ * @param {object} settings - commission_settings row (setter_split_pct)
+ */
+function calculateSetterPreliminaryPay({ contractValue, mpuAmount, roofAmount, batteryAmount, miscAmount, systemSizeKw, paySplit, payScale, settings }) {
+  const hardCosts = (mpuAmount || 0) + (roofAmount || 0) + (batteryAmount || 0) + (miscAmount || 0);
+  const netPPW = computeNetPPW(contractValue || 0, hardCosts, systemSizeKw || 0);
+  const belowFloor = netPPW === null || netPPW < payScale.hard_floor_ppw;
+  const payScaleRate = belowFloor ? null : lookupTierRate(netPPW, payScale.tiers);
+  const repPool = payScaleRate !== null ? round2(payScaleRate * (systemSizeKw || 0) * (paySplit || 0.5)) : 0;
+  const setterPay = payScaleRate !== null ? round2(repPool * settings.setter_split_pct) : 0;
+  return {
+    netPPW: netPPW === null ? null : round2(netPPW),
+    belowFloor,
+    payScaleRate,
+    repPool,
+    setterPay
+  };
+}
+
 function calculateOwnerDistribution({ settings, m1Approved, m2Approved }) {
   const etaiM1 = m1Approved ? settings.owner_etai_m1 : 0;
   const etaiM2 = m2Approved ? settings.owner_etai_m2 : 0;
@@ -164,6 +190,7 @@ module.exports = {
   computeNetPPW,
   lookupTierRate,
   calculateRepCommission,
+  calculateSetterPreliminaryPay,
   calculateOwnerDistribution,
   calculateJoeyBonus,
   calculateAustinPay,

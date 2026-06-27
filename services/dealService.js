@@ -1,6 +1,6 @@
 const { run, get, all } = require('../db/client');
 const {
-  calculateRepCommission, calculateOwnerDistribution, calculateJoeyBonus,
+  calculateRepCommission, calculateSetterPreliminaryPay, calculateOwnerDistribution, calculateJoeyBonus,
   computeEpcCost, computeGross, computeExpectedFunding, sumAllAdders, round2
 } = require('./commissionEngine');
 const auditLog = require('./auditLog');
@@ -22,7 +22,13 @@ const EDITABLE_FIELDS = [
   'original_estimate_amount',
   // Same treatment as cashback_amount — a plain manual figure, not a locked override. Feeds
   // into the Commission Calculator's Total display only, computed client-side.
-  'advance_deduction', 'deduction_other'
+  'advance_deduction', 'deduction_other',
+  // Joy's manually-entered, frozen-at-entry preliminary numbers for the Setter Calculator —
+  // these are the ONLY inputs that ever feed setter_pay. Plain fields, not locked overrides,
+  // same reasoning as cashback_amount: she's just entering data, not overriding a computed result.
+  'setter_calc_contract_value', 'setter_calc_mpu_amount', 'setter_calc_roof_amount',
+  'setter_calc_battery_amount', 'setter_calc_misc_amount', 'setter_calc_system_size_kw',
+  'setter_calc_rate_per_kwh', 'setter_calc_monthly_payment'
 ];
 
 const COMPUTED_FIELDS = [
@@ -30,7 +36,11 @@ const COMPUTED_FIELDS = [
   'owner_etai_total', 'owner_etai_m1_amount', 'owner_etai_m2_amount',
   'owner_noy_total', 'owner_noy_m1_amount', 'owner_noy_m2_amount',
   'joey_m1_bonus', 'joey_m2_bonus', 'below_floor',
-  'gross_amount', 'expected_m1_amount', 'expected_m2_amount'
+  'gross_amount', 'expected_m1_amount', 'expected_m2_amount',
+  // Outputs of the Setter Calculator's own preliminary computation — independent from the
+  // shared net_ppw/pay_scale_rate/rep_pool above, which now only ever reflect the Closer/
+  // Company's real numbers.
+  'setter_calc_net_ppw', 'setter_calc_pay_scale_rate', 'setter_calc_rep_pool', 'setter_calc_below_floor'
 ];
 
 async function getCommissionSettings() {
@@ -233,13 +243,32 @@ async function recalculate(id, userId, { force = false } = {}) {
   const gross = round2(computeGross(deal.contract_value || 0, epcCost, allAddersTotal));
   const { expectedM1, expectedM2 } = computeExpectedFunding(gross, installer);
 
+  // setter_pay is deliberately NOT result.setterPay (which is derived from the real, still-
+  // changing deal data) — it only ever comes from Joy's separate, manually-entered preliminary
+  // numbers, since setters get paid before the deal is funded and before costs are final.
+  const setterPrelim = calculateSetterPreliminaryPay({
+    contractValue: deal.setter_calc_contract_value,
+    mpuAmount: deal.setter_calc_mpu_amount,
+    roofAmount: deal.setter_calc_roof_amount,
+    batteryAmount: deal.setter_calc_battery_amount,
+    miscAmount: deal.setter_calc_misc_amount,
+    systemSizeKw: deal.setter_calc_system_size_kw,
+    paySplit: deal.pay_split || 0.5,
+    payScale,
+    settings
+  });
+
   const newValues = {
     net_ppw: result.netPPW,
     pay_scale_rate: result.payScaleRate,
     rep_pool: result.repPool,
     closer_pay_gross: result.closerPayGross,
     closer_pay_net: result.closerPayNet,
-    setter_pay: result.setterPay,
+    setter_pay: deal.setter_rep_id ? setterPrelim.setterPay : 0,
+    setter_calc_net_ppw: setterPrelim.netPPW,
+    setter_calc_pay_scale_rate: setterPrelim.payScaleRate,
+    setter_calc_rep_pool: setterPrelim.repPool,
+    setter_calc_below_floor: setterPrelim.belowFloor ? 1 : 0,
     owner_etai_total: owner.etaiTotal,
     owner_etai_m1_amount: owner.etaiM1,
     owner_etai_m2_amount: owner.etaiM2,
