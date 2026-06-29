@@ -112,21 +112,42 @@ async function listDeals({ statusId, statusIds, fundingStatuses, repId, installe
 }
 
 async function getDeal(id) {
-  const deal = await get(`
-    SELECT d.*, cr.full_name as closer_name, cr.display_name as closer_display, cr.pay_scale_id as closer_pay_scale_id,
-           sr.full_name as setter_name, sr.display_name as setter_display,
-           ds.label as status_label, ds.phase as status_phase,
-           inst.name as installer_name, fin.name as financier_name
-    FROM deals d
-    LEFT JOIN reps cr ON cr.id = d.closer_rep_id
-    LEFT JOIN reps sr ON sr.id = d.setter_rep_id
-    LEFT JOIN deal_statuses ds ON ds.id = d.status_id
-    LEFT JOIN installers inst ON inst.id = d.installer_id
-    LEFT JOIN financiers fin ON fin.id = d.financier_id
-    WHERE d.id = ?
-  `, [id]);
+  // deal/adders/advances/clawbacks/auditLog/fileRows are all independent of each other's
+  // results — only adderFileRows has a true dependency (needs the adder ids first) — so
+  // firing the rest concurrently turns ~6 sequential network round-trips to Turso into
+  // roughly the time of the single slowest one. This runs on every deal-page load and every
+  // mutation (override, recalculate, approve, etc., which all call getDeal() to return the
+  // fresh state), so it's worth keeping fast.
+  const [deal, adders, advances, clawbacks, auditLogEntries, fileRows] = await Promise.all([
+    get(`
+      SELECT d.*, cr.full_name as closer_name, cr.display_name as closer_display, cr.pay_scale_id as closer_pay_scale_id,
+             sr.full_name as setter_name, sr.display_name as setter_display,
+             ds.label as status_label, ds.phase as status_phase,
+             inst.name as installer_name, fin.name as financier_name
+      FROM deals d
+      LEFT JOIN reps cr ON cr.id = d.closer_rep_id
+      LEFT JOIN reps sr ON sr.id = d.setter_rep_id
+      LEFT JOIN deal_statuses ds ON ds.id = d.status_id
+      LEFT JOIN installers inst ON inst.id = d.installer_id
+      LEFT JOIN financiers fin ON fin.id = d.financier_id
+      WHERE d.id = ?
+    `, [id]),
+    all(`SELECT * FROM deal_adders WHERE deal_id = ? ORDER BY sort_order ASC, id ASC`, [id]),
+    all(`SELECT a.*, r.full_name as rep_name FROM advances a LEFT JOIN reps r ON r.id = a.rep_id WHERE a.deal_id = ?`, [id]),
+    all(`SELECT c.*, r.full_name as rep_name FROM clawbacks c LEFT JOIN reps r ON r.id = c.rep_id WHERE c.deal_id = ?`, [id]),
+    // Attached here (not just on the dedicated GET /:id route) so every mutation — override,
+    // recalculate, payment, approve, adders — returns the full audit history too. Every one of
+    // those calls getDeal() and hands its result straight back to the frontend, which replaces
+    // its local DEAL object wholesale; if auditLog wasn't on it, the page's history list would
+    // go blank on every single action even though the rows were never touched in the database.
+    auditLog.getLogFor('deals', id),
+    // Metadata only — file_data (the actual bytes) is deliberately excluded here and only ever
+    // fetched by the dedicated download route, so attaching a large file never slows down every
+    // load of this deal (or, on listDeals, every deal on the whole Board). At most one row per
+    // slot, so this is at most 2 rows total.
+    all(`SELECT slot, id, file_name, file_type, file_size, uploaded_at FROM deal_estimate_files WHERE deal_id = ?`, [id])
+  ]);
   if (!deal) return null;
-  const adders = await all(`SELECT * FROM deal_adders WHERE deal_id = ? ORDER BY sort_order ASC, id ASC`, [id]);
   // Receipt/Proof metadata per adder — admin-only, batch-fetched (no N+1), file_data itself
   // excluded here for the same reason as the deal-level estimate files above.
   if (adders.length) {
@@ -138,22 +159,6 @@ async function getDeal(id) {
     adderFileRows.forEach((row) => { fileByAdderId[row.adder_id] = row; });
     adders.forEach((a) => { a.receiptFile = fileByAdderId[a.id] || null; });
   }
-  const advances = await all(`SELECT a.*, r.full_name as rep_name FROM advances a LEFT JOIN reps r ON r.id = a.rep_id WHERE a.deal_id = ?`, [id]);
-  const clawbacks = await all(`SELECT c.*, r.full_name as rep_name FROM clawbacks c LEFT JOIN reps r ON r.id = c.rep_id WHERE c.deal_id = ?`, [id]);
-  // Attached here (not just on the dedicated GET /:id route) so every mutation — override,
-  // recalculate, payment, approve, adders — returns the full audit history too. Every one of
-  // those calls getDeal() and hands its result straight back to the frontend, which replaces
-  // its local DEAL object wholesale; if auditLog wasn't on it, the page's history list would
-  // go blank on every single action even though the rows were never touched in the database.
-  const auditLogEntries = await auditLog.getLogFor('deals', id);
-  // Metadata only — file_data (the actual bytes) is deliberately excluded here and only ever
-  // fetched by the dedicated download route, so attaching a large file never slows down every
-  // load of this deal (or, on listDeals, every deal on the whole Board). At most one row per
-  // slot, so this is at most 2 rows total.
-  const fileRows = await all(
-    `SELECT slot, id, file_name, file_type, file_size, uploaded_at FROM deal_estimate_files WHERE deal_id = ?`,
-    [id]
-  );
   const files = { estimate: null, final: null };
   for (const row of fileRows) {
     if (row.slot === 'estimate' || row.slot === 'final') files[row.slot] = row;

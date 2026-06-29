@@ -45,24 +45,85 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
     ? (startDate === endDate ? startDate : `${startDate} to ${endDate}`)
     : 'All Time';
 
-  const activeDeals = await get(`
-    SELECT COUNT(*) c FROM deals d LEFT JOIN deal_statuses ds ON ds.id = d.status_id
-    WHERE COALESCE(ds.phase, 'pre_install') != 'closed'
-  `);
-  const totalDeals = await get(`SELECT COUNT(*) c FROM deals`);
+  // None of these ~16 queries depend on another's result (they only share the statusFilterSql/
+  // fundingStatusFilterSql strings, which are built synchronously above) — firing them all at
+  // once cuts dashboard load time from "16 sequential network round-trips to Turso" down to
+  // roughly the time of the single slowest one. All the processing below is unchanged, just
+  // reading from variables that are now resolved up front instead of one at a time.
+  const [
+    activeDeals, totalDeals, allDeals, repNameRows,
+    outstandingAdvances, openClawbacks, pendingReferrals, payRows,
+    pieDeals, adderRows, installerJobRows, pipeline, recentActivity,
+    awaitingM1Rows, awaitingM2Rows, jobRows
+  ] = await Promise.all([
+    get(`
+      SELECT COUNT(*) c FROM deals d LEFT JOIN deal_statuses ds ON ds.id = d.status_id
+      WHERE COALESCE(ds.phase, 'pre_install') != 'closed'
+    `),
+    get(`SELECT COUNT(*) c FROM deals`),
+    all(`
+      SELECT d.id, d.closer_rep_id, d.setter_rep_id, d.closer_pay_net, d.setter_pay,
+             d.closer_paid, d.closer_paid_date, d.setter_paid, d.setter_paid_date,
+             d.closer_breakdown_approved, d.setter_breakdown_approved,
+             d.m1_paid_date, d.net_ppw, d.system_size_kw, d.gross_amount, d.rep_pool,
+             d.owner_etai_total, d.owner_noy_total, d.joey_m1_bonus, d.joey_m2_bonus,
+             d.funds_received_m1, d.funds_received_m2
+      FROM deals d
+      WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}
+    `, fundingStatusArgs),
+    // Rep names looked up separately so the filtered query above stays simple to read.
+    all(`SELECT id, full_name, display_name FROM reps`),
+    get(`SELECT COALESCE(SUM(amount - amount_deducted), 0) c FROM advances WHERE status != 'deducted'`),
+    get(`SELECT COUNT(*) cnt, COALESCE(SUM(total_clawback), 0) total FROM clawbacks WHERE deducted = 0`),
+    get(`SELECT COUNT(*) cnt, COALESCE(SUM(amount), 0) total FROM referral_bonuses WHERE date_paid IS NULL`),
+    all(`
+      SELECT d.owner_etai_m1_paid, d.owner_etai_m1_paid_date, d.owner_etai_m1_amount,
+             d.owner_etai_m2_paid, d.owner_etai_m2_paid_date, d.owner_etai_m2_amount,
+             d.owner_noy_m1_paid, d.owner_noy_m1_paid_date, d.owner_noy_m1_amount,
+             d.owner_noy_m2_paid, d.owner_noy_m2_paid_date, d.owner_noy_m2_amount,
+             d.joey_m1_paid, d.joey_m1_paid_date, d.joey_m1_bonus,
+             d.joey_paid, d.joey_paid_date, d.joey_m2_bonus,
+             d.funds_received_m1, d.funds_received_m1_date, d.funds_received_m2, d.funds_received_m2_date,
+             fin.name as financier_name
+      FROM deals d LEFT JOIN financiers fin ON fin.id = d.financier_id
+      WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}
+    `, fundingStatusArgs),
+    all(`SELECT id, contract_value, epc_rate_per_watt, system_size_kw, install_completed_date FROM deals d WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}`, fundingStatusArgs),
+    all(`SELECT da.category, da.amount, da.deal_id FROM deal_adders da JOIN deals d ON d.id = da.deal_id WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}`, fundingStatusArgs),
+    all(
+      `SELECT d.id, inst.name as installer_name FROM deals d JOIN installers inst ON inst.id = d.installer_id WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}`,
+      fundingStatusArgs
+    ),
+    all(`
+      SELECT ds.id, ds.label, ds.phase, ds.sort_order, COUNT(d.id) as count
+      FROM deal_statuses ds LEFT JOIN deals d ON d.status_id = ds.id
+      GROUP BY ds.id ORDER BY ds.sort_order
+    `),
+    all(`
+      SELECT a.*, u.email as changed_by_email, d.customer_name
+      FROM audit_log a
+      LEFT JOIN users u ON u.id = a.changed_by
+      LEFT JOIN deals d ON d.id = a.record_id AND a.table_name = 'deals'
+      WHERE a.table_name = 'deals' AND a.field_name IN ('closer_breakdown_approved', 'setter_breakdown_approved', 'closer_paid', 'setter_paid', '_created')
+      ORDER BY a.changed_at DESC LIMIT 10
+    `),
+    all(`
+      SELECT id, expected_m1_amount FROM deals d
+      WHERE m1_approved_date IS NOT NULL AND funds_received_m1_date IS NULL ${statusFilterSql}${fundingStatusFilterSql}
+    `, fundingStatusArgs),
+    all(`
+      SELECT id, expected_m2_amount FROM deals d
+      WHERE m2_approved_date IS NOT NULL AND funds_received_m2_date IS NULL ${statusFilterSql}${fundingStatusFilterSql}
+    `, fundingStatusArgs),
+    all(`
+      SELECT d.id, d.customer_name,
+             d.closer_paid, d.closer_paid_date, d.closer_pay_net,
+             d.setter_paid, d.setter_paid_date, d.setter_pay,
+             d.funds_received_m1_date, d.funds_received_m1, d.funds_received_m2_date, d.funds_received_m2
+      FROM deals d WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}
+    `, fundingStatusArgs)
+  ]);
 
-  const allDeals = await all(`
-    SELECT d.id, d.closer_rep_id, d.setter_rep_id, d.closer_pay_net, d.setter_pay,
-           d.closer_paid, d.closer_paid_date, d.setter_paid, d.setter_paid_date,
-           d.closer_breakdown_approved, d.setter_breakdown_approved,
-           d.m1_paid_date, d.net_ppw, d.system_size_kw, d.gross_amount, d.rep_pool,
-           d.owner_etai_total, d.owner_noy_total, d.joey_m1_bonus, d.joey_m2_bonus,
-           d.funds_received_m1, d.funds_received_m2
-    FROM deals d
-    WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}
-  `, fundingStatusArgs);
-  // Rep names looked up separately so the filtered query above stays simple to read.
-  const repNameRows = await all(`SELECT id, full_name, display_name FROM reps`);
   const repNameMap = {};
   repNameRows.forEach((r) => { repNameMap[r.id] = r.display_name || r.full_name; });
 
@@ -109,26 +170,10 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
     }
   }
 
-  const outstandingAdvances = await get(`SELECT COALESCE(SUM(amount - amount_deducted), 0) c FROM advances WHERE status != 'deducted'`);
-  const openClawbacks = await get(`SELECT COUNT(*) cnt, COALESCE(SUM(total_clawback), 0) total FROM clawbacks WHERE deducted = 0`);
-  const pendingReferrals = await get(`SELECT COUNT(*) cnt, COALESCE(SUM(amount), 0) total FROM referral_bonuses WHERE date_paid IS NULL`);
-
   // Staff Pay (Etai + Noy + Joey) and Funds Received — attributed by the date each piece
   // actually got marked paid/received, filtered to the selected period (or all-time if none).
   // Etai and Noy each have their own paid flag/date/amount now, so this reflects whatever
   // was actually overridden per person rather than assuming the standard $500/$500 split.
-  const payRows = await all(`
-    SELECT d.owner_etai_m1_paid, d.owner_etai_m1_paid_date, d.owner_etai_m1_amount,
-           d.owner_etai_m2_paid, d.owner_etai_m2_paid_date, d.owner_etai_m2_amount,
-           d.owner_noy_m1_paid, d.owner_noy_m1_paid_date, d.owner_noy_m1_amount,
-           d.owner_noy_m2_paid, d.owner_noy_m2_paid_date, d.owner_noy_m2_amount,
-           d.joey_m1_paid, d.joey_m1_paid_date, d.joey_m1_bonus,
-           d.joey_paid, d.joey_paid_date, d.joey_m2_bonus,
-           d.funds_received_m1, d.funds_received_m1_date, d.funds_received_m2, d.funds_received_m2_date,
-           fin.name as financier_name
-    FROM deals d LEFT JOIN financiers fin ON fin.id = d.financier_id
-    WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}
-  `, fundingStatusArgs);
   let staffPay = 0;
   let fundsReceived = 0;
   const financierTotals = {};
@@ -173,7 +218,6 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
   // each adder category, and what's left as POWERED's own margin. Anchored on Solar Date
   // (install_completed_date) per Joy's request, filtered by the same status/date selection
   // as the rest of the dashboard.
-  const pieDeals = await all(`SELECT id, contract_value, epc_rate_per_watt, system_size_kw, install_completed_date FROM deals d WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}`, fundingStatusArgs);
   const pieMatchedIds = new Set(pieDeals.filter((d) => !hasPeriod || inRange(d.install_completed_date, startDate, endDate)).map((d) => d.id));
   let totalContractValue = 0, totalEpcCost = 0;
   for (const d of pieDeals) {
@@ -181,7 +225,6 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
     totalContractValue += d.contract_value || 0;
     totalEpcCost += computeEpcCost(d.epc_rate_per_watt, d.system_size_kw || 0);
   }
-  const adderRows = await all(`SELECT da.category, da.amount, da.deal_id FROM deal_adders da JOIN deals d ON d.id = da.deal_id WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}`, fundingStatusArgs);
   const categoryTotals = {};
   for (const a of adderRows) {
     if (!pieMatchedIds.has(a.deal_id)) continue;
@@ -192,10 +235,6 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
 
   // Adders cost comparison BY INSTALLER, averaged per job (not raw totals) so an installer
   // with more deals in the period doesn't just look "more expensive" by volume alone.
-  const installerJobRows = await all(
-    `SELECT d.id, inst.name as installer_name FROM deals d JOIN installers inst ON inst.id = d.installer_id WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}`,
-    fundingStatusArgs
-  );
   const installerNameByDeal = {};
   const jobCountByInstaller = {};
   for (const r of installerJobRows) {
@@ -229,35 +268,12 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
     ].filter((s) => s.amount > 0)
   };
 
-  const pipeline = await all(`
-    SELECT ds.id, ds.label, ds.phase, ds.sort_order, COUNT(d.id) as count
-    FROM deal_statuses ds LEFT JOIN deals d ON d.status_id = ds.id
-    GROUP BY ds.id ORDER BY ds.sort_order
-  `);
-
   const leaderboard = Object.values(repTotals).sort((a, b) => b.total - a.total).slice(0, 8);
-
-  const recentActivity = await all(`
-    SELECT a.*, u.email as changed_by_email, d.customer_name
-    FROM audit_log a
-    LEFT JOIN users u ON u.id = a.changed_by
-    LEFT JOIN deals d ON d.id = a.record_id AND a.table_name = 'deals'
-    WHERE a.table_name = 'deals' AND a.field_name IN ('closer_breakdown_approved', 'setter_breakdown_approved', 'closer_paid', 'setter_paid', '_created')
-    ORDER BY a.changed_at DESC LIMIT 10
-  `);
 
   // Awaiting M1/M2/Incoming are a "right now" snapshot (what's currently owed) — deliberately
   // not affected by the date filter, only the status filter. The averages below are NOT part
   // of that snapshot: they describe deals funded within the selected period, so they go to
   // 0/— when nothing was funded in that period, same as every other period-scoped KPI.
-  const awaitingM1Rows = await all(`
-    SELECT id, expected_m1_amount FROM deals d
-    WHERE m1_approved_date IS NOT NULL AND funds_received_m1_date IS NULL ${statusFilterSql}${fundingStatusFilterSql}
-  `, fundingStatusArgs);
-  const awaitingM2Rows = await all(`
-    SELECT id, expected_m2_amount FROM deals d
-    WHERE m2_approved_date IS NOT NULL AND funds_received_m2_date IS NULL ${statusFilterSql}${fundingStatusFilterSql}
-  `, fundingStatusArgs);
   const awaitingM1Total = round2(awaitingM1Rows.reduce((s, r) => s + (r.expected_m1_amount || 0), 0));
   const awaitingM2Total = round2(awaitingM2Rows.reduce((s, r) => s + (r.expected_m2_amount || 0), 0));
   const unionMap = new Map();
@@ -282,13 +298,6 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
   // funded in February and paid out in June looked like two unrelated, disconnected events.
   // A job is included if any of its relevant dates falls in the selected period (or always,
   // when no period is selected).
-  const jobRows = await all(`
-    SELECT d.id, d.customer_name,
-           d.closer_paid, d.closer_paid_date, d.closer_pay_net,
-           d.setter_paid, d.setter_paid_date, d.setter_pay,
-           d.funds_received_m1_date, d.funds_received_m1, d.funds_received_m2_date, d.funds_received_m2
-    FROM deals d WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}
-  `, fundingStatusArgs);
   const jobComparisonAll = [];
   for (const d of jobRows) {
     const closerInRange = d.closer_paid && inRange(d.closer_paid_date, startDate, endDate);
@@ -356,16 +365,20 @@ async function getStaffDashboard(staffId) {
   const thisYear = String(new Date().getFullYear());
   const ledger = [];
 
-  for (const run of approvedRuns) {
-    const data = await payRunService.getPayRun(run.id);
+  // Fetching every approved run's data one at a time (one getPayRun() call after another) is
+  // an N+1 round-trip pattern over a remote DB — fire them all concurrently instead, then
+  // process the results in order exactly as before.
+  const payRunDataList = await Promise.all(approvedRuns.map((run) => payRunService.getPayRun(run.id)));
+  approvedRuns.forEach((run, i) => {
+    const data = payRunDataList[i];
     const section = data.sections[sectionKey];
-    if (!section || !section.total) continue;
+    if (!section || !section.total) return;
     const mk = monthKey(run.pay_period_date);
     allTimeTotal += section.total;
     if (mk && mk.startsWith(thisYear)) ytdTotal += section.total;
     if (mk in monthlyTotals) monthlyTotals[mk] += section.total;
     ledger.push({ payRunId: run.id, payPeriodDate: run.pay_period_date, status: run.status, total: section.total, rows: section.rows });
-  }
+  });
   ledger.sort((a, b) => new Date(b.payPeriodDate) - new Date(a.payPeriodDate));
   const monthlyTrend = lastNMonths(6).map((m) => ({ month: m, total: round2(monthlyTotals[m]) }));
 
