@@ -342,13 +342,20 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
   };
 }
 
-// Joy's "Monthly Tracker" for her boss — two distinct monthly anchors on purpose:
-//   Net Profit Generated = POWERED Net for deals INSTALLED that month (Solar Date)
+// Joy's "Monthly Tracker" for her boss.
 //   $ Funded (M1+M2)     = M1/M2 amounts on the date each was actually RECEIVED
-// A deal installed in one month can still have funding land in a later month (or even a
-// later year), so the query pulls in any deal touching the selected year on EITHER date,
-// not just deals installed within it — otherwise a January funding event for a December
-// install from last year would silently go missing from the $ Funded row.
+//   Net Profit Generated = realized profit, recognized progressively as funding actually
+//     lands — never before. A deal's total deductions (closer/setter/staff pay) get split
+//     between M1 and M2 in proportion to how much of the deal's total funding each milestone
+//     represents, so M1's recognized profit shows up in M1's month and M2's in M2's month. A
+//     deal with no M2 milestone at all (a 100%-at-M1 installer) naturally recognizes its full
+//     profit at M1, since total received only ever equals M1 for that deal — no special case
+//     needed, the proportional math just falls out that way. A deal with nothing received yet
+//     contributes $0 everywhere, by design (no funding, no realized profit).
+// A deal installed in one month can still have funding land in a later month (or even a later
+// year), so the query pulls in any deal touching the selected year on EITHER install or
+// funding dates — otherwise a January funding event for a December install from last year
+// would silently go missing from either row.
 async function getMonthlyTracker(year) {
   const yearStart = `${year}-01-01`;
   const yearEnd = `${year}-12-31`;
@@ -374,28 +381,40 @@ async function getMonthlyTracker(year) {
   const yearStr = String(year);
 
   for (const d of rows) {
-    const staffPay = (d.owner_etai_total || 0) + (d.owner_noy_total || 0) + (d.joey_m1_bonus || 0) + (d.joey_m2_bonus || 0);
-    const totalFundsReceived = (d.funds_received_m1 || 0) + (d.funds_received_m2 || 0);
-    const poweredNet = totalFundsReceived - ((d.closer_pay_net || 0) + (d.setter_pay || 0) + staffPay);
+    const totalDeductions = (d.closer_pay_net || 0) + (d.setter_pay || 0)
+      + (d.owner_etai_total || 0) + (d.owner_noy_total || 0) + (d.joey_m1_bonus || 0) + (d.joey_m2_bonus || 0);
+    const m1 = d.funds_received_m1 || 0;
+    const m2 = d.funds_received_m2 || 0;
+    const totalReceived = m1 + m2;
+    const realizedProfit = totalReceived - totalDeductions;
+    // Each milestone's slice of the realized profit is proportional to its slice of the
+    // money actually received so far — not a 50/50 or M1/M2-schedule split.
+    const m1Profit = totalReceived > 0 ? (m1 / totalReceived) * realizedProfit : 0;
+    const m2Profit = totalReceived > 0 ? (m2 / totalReceived) * realizedProfit : 0;
 
+    if (d.funds_received_m1 && d.funds_received_m1_date && d.funds_received_m1_date.slice(0, 4) === yearStr) {
+      const m = Number(d.funds_received_m1_date.slice(5, 7));
+      fundedByMonth[m] += m1;
+      netProfitByMonth[m] += m1Profit;
+    }
+    if (d.funds_received_m2 && d.funds_received_m2_date && d.funds_received_m2_date.slice(0, 4) === yearStr) {
+      const m = Number(d.funds_received_m2_date.slice(5, 7));
+      fundedByMonth[m] += m2;
+      netProfitByMonth[m] += m2Profit;
+    }
     if (d.install_completed_date && d.install_completed_date.slice(0, 4) === yearStr) {
-      const m = Number(d.install_completed_date.slice(5, 7));
-      netProfitByMonth[m] += poweredNet;
       deals.push({
         id: d.id,
         customerName: d.customer_name,
         installDate: d.install_completed_date,
         closer: d.closer_display || d.closer_name,
         setter: d.setter_display || d.setter_name,
-        fundsReceived: round2(totalFundsReceived),
-        netProfit: round2(poweredNet)
+        fundsReceived: round2(totalReceived),
+        // Same m1Profit+m2Profit used for the month buckets, not a separately-computed
+        // realizedProfit — a deal with nothing received yet must show $0 here too, never a
+        // negative number just because a deduction is already on file but no cash is in hand.
+        netProfit: round2(m1Profit + m2Profit)
       });
-    }
-    if (d.funds_received_m1 && d.funds_received_m1_date && d.funds_received_m1_date.slice(0, 4) === yearStr) {
-      fundedByMonth[Number(d.funds_received_m1_date.slice(5, 7))] += d.funds_received_m1;
-    }
-    if (d.funds_received_m2 && d.funds_received_m2_date && d.funds_received_m2_date.slice(0, 4) === yearStr) {
-      fundedByMonth[Number(d.funds_received_m2_date.slice(5, 7))] += d.funds_received_m2;
     }
   }
 
