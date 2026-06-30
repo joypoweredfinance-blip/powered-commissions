@@ -128,6 +128,15 @@ table.data-table th.col-compact, table.data-table td.col-compact { font-size: 12
 
 .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--brand-muted); margin: 0 0 14px; }
 
+/* Per-section display/edit mode */
+.section-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+.section-header .section-title { margin-bottom: 0; }
+.fd-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 20px; }
+.fd-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+.fd-item .fdl { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--brand-muted); margin-bottom: 3px; }
+.fd-item .fdv { font-size: 14px; color: var(--brand-text); font-weight: 500; }
+@media (max-width: 600px) { .fd-grid, .fd-grid.cols-3 { grid-template-columns: repeat(2, 1fr); } }
+
 .adder-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .adder-row input[type="text"] { flex: 2; margin-bottom: 0; }
 .adder-row input[type="number"] { flex: 1; margin-bottom: 0; }

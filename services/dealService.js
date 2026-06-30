@@ -20,7 +20,7 @@ const SETTER_CALC_INPUT_FIELDS = [
 const RECALC_TRIGGER_FIELDS = [...SETTER_CALC_INPUT_FIELDS, 'pay_scale_id'];
 
 const EDITABLE_FIELDS = [
-  'customer_name', 'customer_address', 'customer_phone', 'status_id', 'closer_rep_id', 'setter_rep_id',
+  'customer_name', 'customer_address', 'status_id', 'closer_rep_id', 'setter_rep_id', 'roof_date',
   // Joy's own direct pick, not derived from the closer rep — see getPayScaleById().
   'pay_scale_id',
   'pay_split', 'is_referral', 'installer_id', 'financier_id', 'module_type', 'battery_type', 'num_batteries',

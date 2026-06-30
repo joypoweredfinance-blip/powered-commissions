@@ -48,6 +48,7 @@ const COLUMN_MIGRATIONS = [
   { table: 'deals', column: 'funds_pending_m2', definition: 'REAL' },
   { table: 'deals', column: 'funding_status', definition: 'TEXT' },
   { table: 'deals', column: 'funding_status_override', definition: 'TEXT' },
+  { table: 'deals', column: 'roof_date', definition: 'TEXT' },
   { table: 'deals', column: 'field_override_reasons', definition: "TEXT NOT NULL DEFAULT '{}'" },
   { table: 'deals', column: 'joey_m1_bonus', definition: 'REAL' },
   { table: 'deals', column: 'joey_m1_paid', definition: 'INTEGER NOT NULL DEFAULT 0' },
