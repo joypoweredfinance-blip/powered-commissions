@@ -69,13 +69,18 @@ function selectOptions(list, selected, placeholder, labelKey = 'label') {
 }
 
 async function init() {
-  META = await api('GET', '/api/meta');
   if (dealId) {
-    DEAL = await api('GET', `/api/deals/${dealId}`);
-    const settingsResp = await api('GET', '/api/settings');
+    const [metaResp, dealResp, settingsResp] = await Promise.all([
+      api('GET', '/api/meta'),
+      api('GET', `/api/deals/${dealId}`),
+      api('GET', '/api/settings')
+    ]);
+    META = metaResp;
+    DEAL = dealResp;
     SETTINGS = settingsResp.commissionSettings;
     renderFull();
   } else {
+    META = await api('GET', '/api/meta');
     renderCreateForm();
   }
 }

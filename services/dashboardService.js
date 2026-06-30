@@ -417,7 +417,8 @@ async function getMonthlyTracker(year) {
 
   const netProfitByMonth = {};
   const fundedByMonth = {};
-  for (let m = 1; m <= 12; m++) { netProfitByMonth[m] = 0; fundedByMonth[m] = 0; }
+  const deductionsByMonth = {};
+  for (let m = 1; m <= 12; m++) { netProfitByMonth[m] = 0; fundedByMonth[m] = 0; deductionsByMonth[m] = 0; }
   const deals = [];
   const yearStr = String(year);
 
@@ -432,16 +433,20 @@ async function getMonthlyTracker(year) {
     // money actually received so far — not a 50/50 or M1/M2-schedule split.
     const m1Profit = totalReceived > 0 ? (m1 / totalReceived) * realizedProfit : 0;
     const m2Profit = totalReceived > 0 ? (m2 / totalReceived) * realizedProfit : 0;
+    const m1Deductions = totalReceived > 0 ? (m1 / totalReceived) * totalDeductions : 0;
+    const m2Deductions = totalReceived > 0 ? (m2 / totalReceived) * totalDeductions : 0;
 
     if (d.funds_received_m1 && d.funds_received_m1_date && d.funds_received_m1_date.slice(0, 4) === yearStr) {
       const m = Number(d.funds_received_m1_date.slice(5, 7));
       fundedByMonth[m] += m1;
       netProfitByMonth[m] += m1Profit;
+      deductionsByMonth[m] += m1Deductions;
     }
     if (d.funds_received_m2 && d.funds_received_m2_date && d.funds_received_m2_date.slice(0, 4) === yearStr) {
       const m = Number(d.funds_received_m2_date.slice(5, 7));
       fundedByMonth[m] += m2;
       netProfitByMonth[m] += m2Profit;
+      deductionsByMonth[m] += m2Deductions;
     }
     if (d.install_completed_date && d.install_completed_date.slice(0, 4) === yearStr) {
       deals.push({
@@ -451,6 +456,7 @@ async function getMonthlyTracker(year) {
         closer: d.closer_display || d.closer_name,
         setter: d.setter_display || d.setter_name,
         fundsReceived: round2(totalReceived),
+        totalDeductions: round2(totalReceived > 0 ? totalDeductions : 0),
         // Same m1Profit+m2Profit used for the month buckets, not a separately-computed
         // realizedProfit — a deal with nothing received yet must show $0 here too, never a
         // negative number just because a deduction is already on file but no cash is in hand.
@@ -461,7 +467,12 @@ async function getMonthlyTracker(year) {
 
   const monthly = [];
   for (let m = 1; m <= 12; m++) {
-    monthly.push({ month: m, netProfit: round2(netProfitByMonth[m]), funded: round2(fundedByMonth[m]) });
+    monthly.push({
+      month: m,
+      netProfit: round2(netProfitByMonth[m]),
+      funded: round2(fundedByMonth[m]),
+      deductions: round2(deductionsByMonth[m])
+    });
   }
   deals.sort((a, b) => new Date(b.installDate) - new Date(a.installDate));
 
@@ -470,6 +481,7 @@ async function getMonthlyTracker(year) {
     monthly,
     ytdNetProfit: round2(monthly.reduce((s, r) => s + r.netProfit, 0)),
     ytdFunded: round2(monthly.reduce((s, r) => s + r.funded, 0)),
+    ytdDeductions: round2(monthly.reduce((s, r) => s + r.deductions, 0)),
     deals
   };
 }

@@ -16,8 +16,11 @@
   .tracker-table tbody td { border-bottom: 1px solid var(--brand-border); }
   .tracker-table tbody tr.profit-row td { background: var(--status-green-bg); font-weight: 700; color: var(--status-green); }
   .tracker-table tbody tr.profit-row td:first-child { color: var(--brand-ink); }
+  .tracker-table tbody tr.deduction-row td { background: #fef9f0; color: #92400e; font-weight: 600; }
+  .tracker-table tbody tr.deduction-row td:first-child { color: var(--brand-ink); }
   .tracker-table tbody td.ytd-col { font-weight: 800; border-left: 2px solid var(--brand-border); }
   .tracker-table tbody tr.profit-row td.ytd-col { background: var(--status-green-bg); }
+  .tracker-table tbody tr.deduction-row td.ytd-col { background: #fef3c7; }
 </style>
 </head>
 <body>
@@ -78,15 +81,20 @@ function renderTrackerTable(d) {
       <tr><th></th>${monthHeaders}<th class="ytd-col">YTD</th></tr>
     </thead>
     <tbody>
-      <tr class="profit-row">
-        <td>Net Profit Generated</td>
-        ${d.monthly.map((m) => `<td>${fmtZero(m.netProfit)}</td>`).join('')}
-        <td class="ytd-col">${fmtMoney(d.ytdNetProfit)}</td>
-      </tr>
       <tr>
         <td>$ Funded (M1 + M2)</td>
         ${d.monthly.map((m) => `<td>${fmtZero(m.funded)}</td>`).join('')}
         <td class="ytd-col">${fmtMoney(d.ytdFunded)}</td>
+      </tr>
+      <tr class="deduction-row">
+        <td>Total Deductions</td>
+        ${d.monthly.map((m) => `<td>${fmtZero(m.deductions)}</td>`).join('')}
+        <td class="ytd-col">${fmtMoney(d.ytdDeductions)}</td>
+      </tr>
+      <tr class="profit-row">
+        <td>Net Profit Generated</td>
+        ${d.monthly.map((m) => `<td>${fmtZero(m.netProfit)}</td>`).join('')}
+        <td class="ytd-col">${fmtMoney(d.ytdNetProfit)}</td>
       </tr>
     </tbody>
   `;
@@ -103,7 +111,7 @@ function renderDealsList(deals) {
       <thead>
         <tr>
           <th>Customer</th><th>Solar Date</th><th>Closer</th><th>Setter</th>
-          <th>Funds Received</th><th>Net Profit</th>
+          <th>Funds Received</th><th>Total Deductions</th><th>Net Profit</th>
         </tr>
       </thead>
       <tbody>
@@ -114,6 +122,7 @@ function renderDealsList(deals) {
             <td>${j.closer || '—'}</td>
             <td>${j.setter || '—'}</td>
             <td>${fmtMoney(j.fundsReceived)}</td>
+            <td>${fmtMoney(j.totalDeductions)}</td>
             <td>${fmtMoney(j.netProfit)}</td>
           </tr>
         `).join('')}
