@@ -384,8 +384,8 @@ function renderAdders() {
         ${a.receiptFile
           ? `<a href="/api/deals/${dealId}/adders/${a.id}/file" target="_blank" rel="noopener">${a.receiptFile.file_name}</a><button class="icon-btn a-receipt-remove" title="Remove" style="padding:0 4px;">✕</button>`
           : '<span style="color:var(--brand-muted);">No file attached</span>'}
-        <input type="file" class="a-receipt-input" style="font-size:11px; max-width:150px; margin:0;">
-        <button class="btn secondary small a-receipt-upload" style="width:auto; padding:3px 10px; font-size:11px;">${a.receiptFile ? 'Replace' : 'Attach'}</button>
+        <input type="file" class="a-receipt-input" style="display:none;">
+        <button class="btn secondary small a-receipt-upload" style="width:auto; padding:6px 12px;">📎 ${a.receiptFile ? 'Replace' : 'Attach'}</button>
       </div>
     `).join('');
   }
@@ -416,10 +416,15 @@ function renderAdders() {
   });
   list.querySelectorAll('.adder-receipt-row').forEach((row) => {
     const id = row.dataset.id;
-    row.querySelector('.a-receipt-upload').addEventListener('click', async () => {
-      const input = row.querySelector('.a-receipt-input');
-      const file = input.files[0];
-      if (!file) { alert('Choose a file first.'); return; }
+    const uploadBtn = row.querySelector('.a-receipt-upload');
+    const receiptInput = row.querySelector('.a-receipt-input');
+    uploadBtn.addEventListener('click', () => receiptInput.click());
+    receiptInput.addEventListener('change', async () => {
+      const file = receiptInput.files[0];
+      if (!file) return;
+      const origLabel = uploadBtn.textContent;
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = 'Uploading…';
       const formData = new FormData();
       formData.append('file', file);
       try {
@@ -428,7 +433,11 @@ function renderAdders() {
         if (!res.ok) throw new Error(data.error || 'Upload failed');
         DEAL = data;
         renderAdders();
-      } catch (e) { alert(e.message); }
+      } catch (e) {
+        alert(e.message);
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = origLabel;
+      }
     });
     const removeBtn = row.querySelector('.a-receipt-remove');
     if (removeBtn) removeBtn.addEventListener('click', async () => {
@@ -458,7 +467,7 @@ function calcEditableRow(label, value, fieldName) {
       <span class="lbl">${label}</span>
       <span class="val" style="display:flex; align-items:center; gap:6px; font-weight:400;">
         <input type="number" step="0.01" class="calc-amount-input" data-field="${fieldName}" value="${value ?? ''}" style="margin:0; max-width:100px; padding:4px 8px; font-weight:700;">
-        <button class="btn secondary small calc-amount-save" data-field="${fieldName}" style="width:auto; padding:4px 10px;">Save</button>
+        <button class="btn secondary small calc-amount-save" data-field="${fieldName}" style="width:auto; padding:7px 14px;">Save</button>
       </span>
     </div>
   `;
@@ -641,7 +650,7 @@ function expectedAmountRow(label, amount, overrideField, reason) {
         <span class="lbl" style="color:var(--brand-muted);">${label}</span>
         <div style="display:flex; align-items:center; gap:8px;">
           <input type="number" step="0.01" class="amount-override" data-field="${overrideField}" value="${amount ?? ''}" style="margin:0; max-width:130px;">
-          <button class="btn secondary small amount-save" data-field="${overrideField}" style="width:auto;">Save</button>
+          <button class="btn secondary small amount-save" data-field="${overrideField}" style="width:auto; padding:7px 14px;">Save</button>
         </div>
       </div>
       ${reason ? `<div style="font-size:11px; color:var(--brand-muted); margin-top:2px;">Override reason: ${reason}</div>` : ''}
@@ -712,17 +721,23 @@ function renderEstimateFileSlot(slot) {
       </div>
     `
     : `<p style="color:var(--brand-muted); font-size:12px; margin:0;">No file attached yet.</p>`;
+  const uploadBtnId = `uploadFileBtn_${slot}`;
+  const fileInputId = `fileInput_${slot}`;
   box.insertAdjacentHTML('beforeend', `
-    <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
-      <input type="file" class="estimate-file-input" data-slot="${slot}" style="margin:0; font-size:12px;">
-      <button class="btn secondary small upload-file-btn" data-slot="${slot}" style="width:auto;">${f ? 'Replace File' : 'Attach File'}</button>
+    <div style="margin-top:8px;">
+      <input type="file" id="${fileInputId}" style="display:none;">
+      <button class="btn secondary small" id="${uploadBtnId}" style="width:auto;">📎 ${f ? 'Replace File' : 'Attach File'}</button>
     </div>
   `);
 
-  box.querySelector('.upload-file-btn').addEventListener('click', async () => {
-    const input = box.querySelector('.estimate-file-input');
-    const file = input.files[0];
-    if (!file) { alert('Choose a file first.'); return; }
+  const uploadBtn = document.getElementById(uploadBtnId);
+  const fileInput = document.getElementById(fileInputId);
+  uploadBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = 'Uploading…';
     const formData = new FormData();
     formData.append('file', file);
     try {
@@ -731,7 +746,11 @@ function renderEstimateFileSlot(slot) {
       if (!res.ok) throw new Error(data.error || 'Upload failed');
       DEAL = data;
       renderEstimateFileSlot(slot);
-    } catch (err) { alert(err.message); }
+    } catch (err) {
+      alert(err.message);
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = f ? 'Replace File' : 'Attach File';
+    }
   });
 
   const removeBtn = box.querySelector('.remove-file-btn');
@@ -820,7 +839,7 @@ function editableAmountRow(label, recipient, paid, amount, paidDate, overrideFie
       </div>
       <div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
         <input type="number" step="0.01" class="amount-override" data-field="${overrideField}" value="${amount ?? ''}" style="margin:0; max-width:140px;">
-        <button class="btn secondary small amount-save" data-field="${overrideField}" style="width:auto;">Save</button>
+        <button class="btn secondary small amount-save" data-field="${overrideField}" style="width:auto; padding:7px 14px;">Save</button>
       </div>
       ${reason ? `<div style="font-size:11px; color:var(--brand-muted); margin-top:2px;">Override reason: ${reason}</div>` : ''}
     </div>`;
@@ -871,22 +890,30 @@ function renderPayment() {
   html += editableAmountRow("Joey's Bonus — M2", 'joey', d.joey_paid, d.joey_m2_bonus, d.joey_paid_date, 'joey_m2_bonus', fieldOverrideReason(d, 'joey_m2_bonus'));
   document.getElementById('paymentBox').innerHTML = html;
 
-  async function sendPayment(recipient, paid, date) {
+  // Optimistic: the checkbox and date picker update instantly; the API call happens in
+  // the background. Only the audit log re-renders on success. If the server errors, the
+  // checkbox rolls back and the payment box re-renders to show the correct state.
+  async function sendPayment(recipient, paid, date, checkboxEl, dateInputEl) {
+    if (dateInputEl) dateInputEl.style.display = paid ? '' : 'none';
     try {
       DEAL = await api('POST', `/api/deals/${dealId}/payment`, { recipient, paid, date });
-      renderPayment();
-    } catch (e) { alert(e.message); }
+      renderAudit();
+    } catch (e) {
+      alert(e.message);
+      if (checkboxEl) checkboxEl.checked = !paid;
+      if (dateInputEl) dateInputEl.style.display = !paid ? '' : 'none';
+    }
   }
 
   document.querySelectorAll('.pay-toggle').forEach((box) => {
     box.addEventListener('change', () => {
       const dateInput = document.querySelector(`.pay-date[data-recipient="${box.dataset.recipient}"]`);
-      sendPayment(box.dataset.recipient, box.checked, dateInput ? dateInput.value : null);
+      sendPayment(box.dataset.recipient, box.checked, dateInput ? dateInput.value : null, box, dateInput);
     });
   });
   document.querySelectorAll('.pay-date').forEach((input) => {
     input.addEventListener('change', () => {
-      sendPayment(input.dataset.recipient, true, input.value);
+      sendPayment(input.dataset.recipient, true, input.value, null, input);
     });
   });
   wireAmountOverrideButtons();

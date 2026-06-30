@@ -149,7 +149,7 @@ async function getDeal(id) {
     // those calls getDeal() and hands its result straight back to the frontend, which replaces
     // its local DEAL object wholesale; if auditLog wasn't on it, the page's history list would
     // go blank on every single action even though the rows were never touched in the database.
-    auditLog.getLogFor('deals', id),
+    auditLog.getLogFor('deals', id, { limit: 50 }),
     // Metadata only — file_data (the actual bytes) is deliberately excluded here and only ever
     // fetched by the dedicated download route, so attaching a large file never slows down every
     // load of this deal (or, on listDeals, every deal on the whole Board). At most one row per
