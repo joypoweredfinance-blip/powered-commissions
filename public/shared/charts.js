@@ -149,7 +149,17 @@ function renderMonthlyTrackerChart(canvasId, monthly) {
       maintainAspectRatio: false,
       plugins: {
         legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 12 } } },
-        tooltip: { callbacks: { label: (c) => `${c.dataset.label}: $${c.parsed.y.toLocaleString()}` } }
+        tooltip: {
+          callbacks: {
+            label: (c) => {
+              const val = c.parsed.y;
+              const funded = c.chart.data.datasets.find((d) => d.label === '$ Funded (M1+M2)')?.data[c.dataIndex] || 0;
+              const pctStr = funded && c.dataset.label !== '$ Funded (M1+M2)'
+                ? ` (${((val / funded) * 100).toFixed(1)}% of funded)` : '';
+              return `${c.dataset.label}: $${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${pctStr}`;
+            }
+          }
+        }
       },
       scales: {
         y: { beginAtZero: true, ticks: { callback: (v) => '$' + v.toLocaleString() }, grid: { color: '#EFEDF6' } },

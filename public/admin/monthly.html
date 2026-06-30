@@ -16,6 +16,7 @@
   .tracker-table tbody td { border-bottom: 1px solid var(--brand-border); }
   .tracker-table tbody tr.profit-row td { background: var(--status-green-bg); font-weight: 700; color: var(--status-green); }
   .tracker-table tbody tr.profit-row td:first-child { color: var(--brand-ink); }
+  .tracker-table tbody tr.funded-row td { font-weight: 700; }
   .tracker-table tbody tr.deduction-row td { background: #fef9f0; color: #92400e; font-weight: 600; }
   .tracker-table tbody tr.deduction-row td:first-child { color: var(--brand-ink); }
   .tracker-table tbody td.ytd-col { font-weight: 800; border-left: 2px solid var(--brand-border); }
@@ -74,6 +75,11 @@ function populateYearPicker() {
   sel.addEventListener('change', load);
 }
 
+function pct(val, total) {
+  if (!total) return '';
+  return ` <span style="font-size:11px; opacity:0.75;">(${((val / total) * 100).toFixed(1)}%)</span>`;
+}
+
 function renderTrackerTable(d) {
   const monthHeaders = d.monthly.map((m) => `<th>${monthShort(m.month)}</th>`).join('');
   document.getElementById('trackerTable').innerHTML = `
@@ -81,20 +87,20 @@ function renderTrackerTable(d) {
       <tr><th></th>${monthHeaders}<th class="ytd-col">YTD</th></tr>
     </thead>
     <tbody>
-      <tr>
+      <tr class="funded-row">
         <td>$ Funded (M1 + M2)</td>
         ${d.monthly.map((m) => `<td>${fmtZero(m.funded)}</td>`).join('')}
         <td class="ytd-col">${fmtMoney(d.ytdFunded)}</td>
       </tr>
       <tr class="deduction-row">
         <td>Total Deductions</td>
-        ${d.monthly.map((m) => `<td>${fmtZero(m.deductions)}</td>`).join('')}
-        <td class="ytd-col">${fmtMoney(d.ytdDeductions)}</td>
+        ${d.monthly.map((m) => `<td>${m.deductions ? fmtMoney(m.deductions) + pct(m.deductions, m.funded) : '-'}</td>`).join('')}
+        <td class="ytd-col">${fmtMoney(d.ytdDeductions)}${pct(d.ytdDeductions, d.ytdFunded)}</td>
       </tr>
       <tr class="profit-row">
         <td>Net Profit Generated</td>
-        ${d.monthly.map((m) => `<td>${fmtZero(m.netProfit)}</td>`).join('')}
-        <td class="ytd-col">${fmtMoney(d.ytdNetProfit)}</td>
+        ${d.monthly.map((m) => `<td>${m.netProfit ? fmtMoney(m.netProfit) + pct(m.netProfit, m.funded) : '-'}</td>`).join('')}
+        <td class="ytd-col">${fmtMoney(d.ytdNetProfit)}${pct(d.ytdNetProfit, d.ytdFunded)}</td>
       </tr>
     </tbody>
   `;
@@ -122,8 +128,8 @@ function renderDealsList(deals) {
             <td>${j.closer || '—'}</td>
             <td>${j.setter || '—'}</td>
             <td>${fmtMoney(j.fundsReceived)}</td>
-            <td>${fmtMoney(j.totalDeductions)}</td>
-            <td>${fmtMoney(j.netProfit)}</td>
+            <td>${fmtMoney(j.totalDeductions)}${pct(j.totalDeductions, j.fundsReceived)}</td>
+            <td>${fmtMoney(j.netProfit)}${pct(j.netProfit, j.fundsReceived)}</td>
           </tr>
         `).join('')}
       </tbody>
