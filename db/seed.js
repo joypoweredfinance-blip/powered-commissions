@@ -102,10 +102,10 @@ async function seedIfEmpty() {
         [standard.id, threshold, rate, i++]);
     }
   }
-  let v1 = await get(`SELECT id FROM pay_scales WHERE name = ?`, ['Pay Scale v1 (Roy)']);
+  let v1 = await get(`SELECT id FROM pay_scales WHERE name = ?`, ['Pay Scale v1']);
   if (!v1) {
-    await run(`INSERT INTO pay_scales (name, rounding_rule, hard_floor_ppw) VALUES (?, 'round_down', 3.20)`, ['Pay Scale v1 (Roy)']);
-    v1 = await get(`SELECT id FROM pay_scales WHERE name = ?`, ['Pay Scale v1 (Roy)']);
+    await run(`INSERT INTO pay_scales (name, rounding_rule, hard_floor_ppw) VALUES (?, 'round_down', 3.20)`, ['Pay Scale v1']);
+    v1 = await get(`SELECT id FROM pay_scales WHERE name = ?`, ['Pay Scale v1']);
     let i = 0;
     for (const [threshold, rate] of V1_TIERS) {
       await run(`INSERT INTO pay_scale_tiers (pay_scale_id, net_ppw_threshold, dollar_per_kw, sort_order) VALUES (?, ?, ?, ?)`,

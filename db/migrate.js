@@ -181,6 +181,12 @@ async function runMigrations() {
   const nonBothReps = await run(`UPDATE reps SET rep_type = 'both' WHERE rep_type != 'both'`);
   if (nonBothReps.rowsAffected) console.log(`Migration: set rep_type = 'both' for ${nonBothReps.rowsAffected} rep(s)`);
 
+  // "Pay Scale v1 (Roy)" is just "Pay Scale v1" now that it's a deal-level pick rather than
+  // tied to one specific rep's name. Runs before seed.js's own lookup-or-create check, so this
+  // rename (not a fresh insert) is what seed.js will find on every subsequent boot.
+  const v1Rename = await run(`UPDATE pay_scales SET name = 'Pay Scale v1' WHERE name = 'Pay Scale v1 (Roy)'`);
+  if (v1Rename.rowsAffected) console.log(`Migration: renamed "Pay Scale v1 (Roy)" to "Pay Scale v1"`);
+
   // Pay scale used to be derived purely from the closer rep's own assignment — now it's a
   // direct, per-deal choice on the Commission Calculator. Backfilling from the closer's
   // currently-assigned scale (falling back to Standard) reproduces exactly what every
