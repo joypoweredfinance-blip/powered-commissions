@@ -67,7 +67,8 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
              d.closer_breakdown_approved, d.setter_breakdown_approved,
              d.m1_paid_date, d.net_ppw, d.system_size_kw, d.gross_amount, d.rep_pool,
              d.owner_etai_total, d.owner_noy_total, d.joey_m1_bonus, d.joey_m2_bonus,
-             d.funds_received_m1, d.funds_received_m2
+             d.funds_received_m1, d.funds_received_m2, d.install_completed_date,
+             d.expected_m1_amount, d.expected_m2_amount
       FROM deals d
       WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}
     `, fundingStatusArgs),
@@ -134,7 +135,12 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
   // Averages describe deals actually FUNDED within the selected period (same condition as
   // fundedCount) — unlike Awaiting M1/M2/Incoming below, these must go to 0/— when nothing
   // was funded in the period, not fall back to whatever's outstanding "right now".
-  const periodSystemSizes = [], periodNetPpws = [], periodGross = [], periodPoweredNet = [];
+  const periodSystemSizes = [], periodNetPpws = [], periodGross = [];
+  // Total Net (Actual/Projected) are scoped by Solar Date (install_completed_date), matching
+  // this page's "Filter by Solar Date" framing — every deal whose install falls in the
+  // selected period contributes, regardless of whether its funding has landed yet.
+  let totalNetActual = 0;
+  let totalNetProjected = 0;
 
   for (const d of allDeals) {
     if (d.m1_paid_date && (!hasPeriod || inRange(d.m1_paid_date, startDate, endDate))) {
@@ -142,12 +148,24 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
       if (d.system_size_kw !== null && d.system_size_kw !== undefined) periodSystemSizes.push(d.system_size_kw);
       if (d.net_ppw !== null && d.net_ppw !== undefined) periodNetPpws.push(d.net_ppw);
       if (d.gross_amount !== null && d.gross_amount !== undefined) periodGross.push(d.gross_amount);
-      // POWERED Net = Total Funds Received less (Closer Pay + Setter Pay + Staff Pay) for
-      // that job — not Gross minus Rep Pool, which double-counted the installer's own EPC
-      // split rather than reflecting cash actually in hand.
-      const staffPay = (d.owner_etai_total || 0) + (d.owner_noy_total || 0) + (d.joey_m1_bonus || 0) + (d.joey_m2_bonus || 0);
-      const totalFundsReceived = (d.funds_received_m1 || 0) + (d.funds_received_m2 || 0);
-      periodPoweredNet.push(totalFundsReceived - ((d.closer_pay_net || 0) + (d.setter_pay || 0) + staffPay));
+    }
+    if (d.install_completed_date && (!hasPeriod || inRange(d.install_completed_date, startDate, endDate))) {
+      // Same deductions either way — these are already fully computed by the engine
+      // regardless of funding status, only the PAYOUT timing depends on it.
+      const totalDeductions = (d.closer_pay_net || 0) + (d.setter_pay || 0)
+        + (d.owner_etai_total || 0) + (d.owner_noy_total || 0) + (d.joey_m1_bonus || 0) + (d.joey_m2_bonus || 0);
+      const m1Received = d.funds_received_m1 || 0;
+      const m2Received = d.funds_received_m2 || 0;
+      const totalReceived = m1Received + m2Received;
+      // Actual: only money that's genuinely landed — $0 (never negative) for a deal that
+      // hasn't been funded at all yet, same guard used for the Monthly Tracker.
+      totalNetActual += totalReceived > 0 ? (totalReceived - totalDeductions) : 0;
+      // Projected: the full eventual total assuming everything funds as currently expected —
+      // confirmed actual amount per milestone where we have it, the engine's own expected
+      // amount where we don't yet.
+      const m1Final = d.funds_received_m1 ? m1Received : (d.expected_m1_amount || 0);
+      const m2Final = d.funds_received_m2 ? m2Received : (d.expected_m2_amount || 0);
+      totalNetProjected += (m1Final + m2Final) - totalDeductions;
     }
     if (d.closer_rep_id && !d.closer_breakdown_approved) pendingApproval += d.closer_pay_net || 0;
     if (d.setter_rep_id && !d.setter_breakdown_approved) pendingApproval += d.setter_pay || 0;
@@ -286,10 +304,11 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
     awaitingM1: { total: awaitingM1Total, count: awaitingM1Rows.length },
     awaitingM2: { total: awaitingM2Total, count: awaitingM2Rows.length },
     incoming: { total: round2(awaitingM1Total + awaitingM2Total), count: unionDeals.length },
-    avgSystemSizeKw: avgOfPeriod(periodSystemSizes),
     avgNetPpw: avgOfPeriod(periodNetPpws),
-    avgGross: avgOfPeriod(periodGross),
-    avgPoweredNet: avgOfPeriod(periodPoweredNet)
+    avgSystemSizeKw: avgOfPeriod(periodSystemSizes),
+    totalGross: round2(periodGross.reduce((s, v) => s + v, 0)),
+    totalNetProjected: round2(totalNetProjected),
+    totalNetActual: round2(totalNetActual)
   };
 
   // Per-job comparison: Total Funds Received vs Commission Paid for each individual job,

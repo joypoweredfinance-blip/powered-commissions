@@ -252,10 +252,11 @@ async function load() {
     kpiCard('Awaiting M2', fmtMoney(f.awaitingM2.total), `${f.awaitingM2.count} deals — right now`, 'funding')
   ].join('');
   document.getElementById('avgGrid').innerHTML = [
-    kpiCard('Avg System Size', f.avgSystemSizeKw !== null ? f.avgSystemSizeKw + ' kW' : '—'),
     kpiCard('Avg Net PPW', f.avgNetPpw !== null ? '$' + f.avgNetPpw : '—'),
-    kpiCard('Avg Gross', fmtMoney(f.avgGross)),
-    kpiCard('Avg POWERED Net', fmtMoney(f.avgPoweredNet))
+    kpiCard('Avg System Size', f.avgSystemSizeKw !== null ? f.avgSystemSizeKw + ' kW' : '—'),
+    kpiCard('Total Gross', fmtMoney(f.totalGross)),
+    kpiCard('Total Net (Projected)', fmtMoney(f.totalNetProjected), 'full eventual total, incl. expected funding'),
+    kpiCard('Total Net (Actual)', fmtMoney(f.totalNetActual), 'only funds actually received')
   ].join('');
 
   document.getElementById('kpiGrid').innerHTML = [
