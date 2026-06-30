@@ -48,7 +48,7 @@ app.use('/api/pay-runs', requireRole('admin', 'super_admin'), require('./routes/
 app.use('/api/myjobs', requireRole('sales_rep'), require('./routes/myjobs'));
 app.use('/api/mypayroll', requireRole('payroll_staff'), require('./routes/mypayroll'));
 
-for (const page of ['board', 'deal', 'adders-report', 'dashboard', 'reps', 'rep-dashboard', 'rep-job-view', 'payroll-staff', 'staff-dashboard', 'installers', 'settings', 'advances', 'clawbacks', 'referrals', 'pay-runs', 'pay-run']) {
+for (const page of ['board', 'deal', 'adders-report', 'dashboard', 'monthly', 'reps', 'rep-dashboard', 'rep-job-view', 'payroll-staff', 'staff-dashboard', 'installers', 'settings', 'advances', 'clawbacks', 'referrals', 'pay-runs', 'pay-run']) {
   app.get(`/admin/${page}.html`, guardPage(`admin/${page}.html`, 'admin', 'super_admin'));
 }
 app.get('/admin/admins.html', guardPage('admin/admins.html', 'super_admin'));

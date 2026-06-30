@@ -342,6 +342,78 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
   };
 }
 
+// Joy's "Monthly Tracker" for her boss — two distinct monthly anchors on purpose:
+//   Net Profit Generated = POWERED Net for deals INSTALLED that month (Solar Date)
+//   $ Funded (M1+M2)     = M1/M2 amounts on the date each was actually RECEIVED
+// A deal installed in one month can still have funding land in a later month (or even a
+// later year), so the query pulls in any deal touching the selected year on EITHER date,
+// not just deals installed within it — otherwise a January funding event for a December
+// install from last year would silently go missing from the $ Funded row.
+async function getMonthlyTracker(year) {
+  const yearStart = `${year}-01-01`;
+  const yearEnd = `${year}-12-31`;
+  const rows = await all(`
+    SELECT d.id, d.customer_name, d.install_completed_date,
+           d.closer_pay_net, d.setter_pay,
+           d.owner_etai_total, d.owner_noy_total, d.joey_m1_bonus, d.joey_m2_bonus,
+           d.funds_received_m1, d.funds_received_m1_date, d.funds_received_m2, d.funds_received_m2_date,
+           cr.display_name as closer_display, cr.full_name as closer_name,
+           sr.display_name as setter_display, sr.full_name as setter_name
+    FROM deals d
+    LEFT JOIN reps cr ON cr.id = d.closer_rep_id
+    LEFT JOIN reps sr ON sr.id = d.setter_rep_id
+    WHERE (d.install_completed_date BETWEEN ? AND ?)
+       OR (d.funds_received_m1_date BETWEEN ? AND ?)
+       OR (d.funds_received_m2_date BETWEEN ? AND ?)
+  `, [yearStart, yearEnd, yearStart, yearEnd, yearStart, yearEnd]);
+
+  const netProfitByMonth = {};
+  const fundedByMonth = {};
+  for (let m = 1; m <= 12; m++) { netProfitByMonth[m] = 0; fundedByMonth[m] = 0; }
+  const deals = [];
+  const yearStr = String(year);
+
+  for (const d of rows) {
+    const staffPay = (d.owner_etai_total || 0) + (d.owner_noy_total || 0) + (d.joey_m1_bonus || 0) + (d.joey_m2_bonus || 0);
+    const totalFundsReceived = (d.funds_received_m1 || 0) + (d.funds_received_m2 || 0);
+    const poweredNet = totalFundsReceived - ((d.closer_pay_net || 0) + (d.setter_pay || 0) + staffPay);
+
+    if (d.install_completed_date && d.install_completed_date.slice(0, 4) === yearStr) {
+      const m = Number(d.install_completed_date.slice(5, 7));
+      netProfitByMonth[m] += poweredNet;
+      deals.push({
+        id: d.id,
+        customerName: d.customer_name,
+        installDate: d.install_completed_date,
+        closer: d.closer_display || d.closer_name,
+        setter: d.setter_display || d.setter_name,
+        fundsReceived: round2(totalFundsReceived),
+        netProfit: round2(poweredNet)
+      });
+    }
+    if (d.funds_received_m1 && d.funds_received_m1_date && d.funds_received_m1_date.slice(0, 4) === yearStr) {
+      fundedByMonth[Number(d.funds_received_m1_date.slice(5, 7))] += d.funds_received_m1;
+    }
+    if (d.funds_received_m2 && d.funds_received_m2_date && d.funds_received_m2_date.slice(0, 4) === yearStr) {
+      fundedByMonth[Number(d.funds_received_m2_date.slice(5, 7))] += d.funds_received_m2;
+    }
+  }
+
+  const monthly = [];
+  for (let m = 1; m <= 12; m++) {
+    monthly.push({ month: m, netProfit: round2(netProfitByMonth[m]), funded: round2(fundedByMonth[m]) });
+  }
+  deals.sort((a, b) => new Date(b.installDate) - new Date(a.installDate));
+
+  return {
+    year,
+    monthly,
+    ytdNetProfit: round2(monthly.reduce((s, r) => s + r.netProfit, 0)),
+    ytdFunded: round2(monthly.reduce((s, r) => s + r.funded, 0)),
+    deals
+  };
+}
+
 // Required here (not at top) since payRunService doesn't depend on dashboardService —
 // no cycle, just keeping the staff-dashboard-specific require next to its one use.
 const payRunService = require('./payRunService');
@@ -409,4 +481,4 @@ async function getStaffDashboard(staffId) {
   };
 }
 
-module.exports = { getOverallDashboard, getStaffDashboard };
+module.exports = { getOverallDashboard, getStaffDashboard, getMonthlyTracker };

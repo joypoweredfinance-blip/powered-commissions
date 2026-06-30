@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Monthly Tracker — POWERED Commissions</title>
+<link rel="stylesheet" href="/shared/brand.css">
+<link rel="stylesheet" href="/admin/admin.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+  .tracker-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .tracker-table th, .tracker-table td { padding: 10px 12px; text-align: right; white-space: nowrap; }
+  .tracker-table th:first-child, .tracker-table td:first-child { text-align: left; }
+  .tracker-table thead th { background: var(--brand-black); color: #fff; font-weight: 700; }
+  .tracker-table thead th.ytd-col { background: var(--status-green); }
+  .tracker-table tbody td { border-bottom: 1px solid var(--brand-border); }
+  .tracker-table tbody tr.profit-row td { background: var(--status-green-bg); font-weight: 700; color: var(--status-green); }
+  .tracker-table tbody tr.profit-row td:first-child { color: var(--brand-ink); }
+  .tracker-table tbody td.ytd-col { font-weight: 800; border-left: 2px solid var(--brand-border); }
+  .tracker-table tbody tr.profit-row td.ytd-col { background: var(--status-green-bg); }
+</style>
+</head>
+<body>
+<script src="/admin/admin-common.js"></script>
+<script>renderAdminShell('/admin/monthly.html', 'Monthly Tracker');</script>
+<script src="/shared/charts.js"></script>
+<script>
+let chartInstance = null;
+
+document.getElementById('pageContent').innerHTML = `
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <label style="font-weight:700; margin:0;">Year</label>
+      <select id="yearPicker" style="margin:0; max-width:120px;"></select>
+    </div>
+    <button class="btn secondary small" id="exportPdfBtn" style="width:auto;">Export PDF</button>
+  </div>
+
+  <div class="card" style="margin-bottom:20px; overflow-x:auto;">
+    <p class="section-title" style="margin-top:0;">Net Profit Generated vs Funded</p>
+    <table class="tracker-table" id="trackerTable"></table>
+    <p style="font-size:11.5px; color:var(--brand-muted); font-style:italic; margin:12px 0 0;">
+      Net Profit Generated = POWERED Net for deals installed that month &nbsp;•&nbsp; $ Funded = M1 + M2 received that month
+    </p>
+  </div>
+
+  <div class="card" style="margin-bottom:20px;">
+    <p class="section-title" style="margin-top:0;">By Month</p>
+    <div style="height:320px;"><canvas id="trackerChart"></canvas></div>
+  </div>
+
+  <div class="card">
+    <p class="section-title" style="margin-top:0;">Deals Installed This Year</p>
+    <div id="dealsTableWrap"></div>
+  </div>
+`;
+
+function pad(n) { return String(n).padStart(2, '0'); }
+function monthShort(m) {
+  return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1];
+}
+function fmtZero(n) { return n ? fmtMoney(n) : '-'; }
+
+function populateYearPicker() {
+  const now = new Date();
+  const sel = document.getElementById('yearPicker');
+  let opts = '';
+  for (let y = now.getFullYear() + 1; y >= now.getFullYear() - 5; y--) opts += `<option value="${y}">${y}</option>`;
+  sel.innerHTML = opts;
+  sel.value = now.getFullYear();
+  sel.addEventListener('change', load);
+}
+
+function renderTrackerTable(d) {
+  const monthHeaders = d.monthly.map((m) => `<th>${monthShort(m.month)}</th>`).join('');
+  document.getElementById('trackerTable').innerHTML = `
+    <thead>
+      <tr><th></th>${monthHeaders}<th class="ytd-col">YTD</th></tr>
+    </thead>
+    <tbody>
+      <tr class="profit-row">
+        <td>Net Profit Generated</td>
+        ${d.monthly.map((m) => `<td>${fmtZero(m.netProfit)}</td>`).join('')}
+        <td class="ytd-col">${fmtMoney(d.ytdNetProfit)}</td>
+      </tr>
+      <tr>
+        <td>$ Funded (M1 + M2)</td>
+        ${d.monthly.map((m) => `<td>${fmtZero(m.funded)}</td>`).join('')}
+        <td class="ytd-col">${fmtMoney(d.ytdFunded)}</td>
+      </tr>
+    </tbody>
+  `;
+}
+
+function renderDealsList(deals) {
+  const wrap = document.getElementById('dealsTableWrap');
+  if (deals.length === 0) {
+    wrap.innerHTML = '<p style="color:var(--brand-muted); font-size:13px;">No deals installed this year yet.</p>';
+    return;
+  }
+  wrap.innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Customer</th><th>Solar Date</th><th>Closer</th><th>Setter</th>
+          <th>Funds Received</th><th>Net Profit</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${deals.map((j) => `
+          <tr class="deal-row" onclick="window.location.href='/admin/deal.html?id=${j.id}'">
+            <td>${j.customerName}</td>
+            <td>${fmtDate(j.installDate)}</td>
+            <td>${j.closer || '—'}</td>
+            <td>${j.setter || '—'}</td>
+            <td>${fmtMoney(j.fundsReceived)}</td>
+            <td>${fmtMoney(j.netProfit)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function load() {
+  const year = document.getElementById('yearPicker').value;
+  const d = await api('GET', `/api/dashboard/monthly?year=${year}`);
+  renderTrackerTable(d);
+  renderDealsList(d.deals);
+  if (chartInstance) chartInstance.destroy();
+  chartInstance = renderMonthlyTrackerChart('trackerChart', d.monthly);
+}
+
+document.getElementById('exportPdfBtn').addEventListener('click', () => { window.print(); });
+
+populateYearPicker();
+load();
+</script>
+</body>
+</html>

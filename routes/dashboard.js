@@ -24,6 +24,14 @@ router.get('/rep/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+router.get('/monthly', async (req, res) => {
+  try {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const data = await dashboardService.getMonthlyTracker(year);
+    res.json(data);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.get('/staff/:id', async (req, res) => {
   try {
     const data = await dashboardService.getStaffDashboard(req.params.id);

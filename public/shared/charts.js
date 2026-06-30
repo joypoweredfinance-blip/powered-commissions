@@ -126,6 +126,37 @@ function renderInstallerAddersChart(canvasId, comparison, categoryLabels) {
   });
 }
 
+// Net Profit Generated (purple) vs $ Funded M1+M2 (green) — same color convention as the
+// Funds Received vs Commission Paid chart above (green always means money that actually came
+// in), grouped side-by-side per month rather than stacked, since the two numbers aren't parts
+// of a whole — they're two independent series worth comparing month to month.
+function renderMonthlyTrackerChart(canvasId, monthly) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: monthly.map((m) => monthNames[m.month - 1]),
+      datasets: [
+        { label: 'Net Profit Generated', data: monthly.map((m) => m.netProfit), backgroundColor: '#6B3FD4', borderRadius: 5, maxBarThickness: 28 },
+        { label: '$ Funded (M1+M2)', data: monthly.map((m) => m.funded), backgroundColor: '#1B5E45', borderRadius: 5, maxBarThickness: 28 }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 12 } } },
+        tooltip: { callbacks: { label: (c) => `${c.dataset.label}: $${c.parsed.y.toLocaleString()}` } }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: (v) => '$' + v.toLocaleString() }, grid: { color: '#EFEDF6' } },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+}
+
 function renderFunnelChart(canvasId, pipeline) {
   const ctx = document.getElementById(canvasId).getContext('2d');
   return new Chart(ctx, {

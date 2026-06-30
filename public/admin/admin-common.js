@@ -1,6 +1,7 @@
 const NAV_ITEMS = [
   { section: 'Overview' },
   { href: '/admin/dashboard.html', label: '📊 Dashboard' },
+  { href: '/admin/monthly.html', label: '📅 Monthly' },
   { section: 'Deals' },
   { href: '/admin/board.html', label: '📋 Deals Board' },
   { href: '/admin/adders-report.html', label: '🧾 Adders Report' },
