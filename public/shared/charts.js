@@ -29,10 +29,11 @@ function renderTrendChart(canvasId, trend, { color = '#6B3FD4', label = 'Paid' }
   });
 }
 
-// Per-job comparison — Funds Received vs Commission Paid side by side for each individual
-// job, so the gap (or match) between the two is visible per job rather than across two
-// independently time-bucketed totals that may not actually relate to the same work.
-// Horizontal bars read better than vertical ones once labels are customer names.
+// Per-job comparison — Funds Received as its own bar, Commission Paid + Staff Pay stacked
+// together as a second bar (same "stack" group), so each job shows "what came in" next to
+// "what went out, broken into who got it" rather than two independently time-bucketed
+// totals that may not actually relate to the same work. Horizontal bars read better than
+// vertical ones once labels are customer names.
 function renderJobComparisonChart(canvasId, jobComparison) {
   const ctx = document.getElementById(canvasId).getContext('2d');
   return new Chart(ctx, {
@@ -40,8 +41,9 @@ function renderJobComparisonChart(canvasId, jobComparison) {
     data: {
       labels: jobComparison.map((j) => j.customerName),
       datasets: [
-        { label: 'Funds Received', data: jobComparison.map((j) => j.fundsReceived), backgroundColor: '#1B5E45', borderRadius: 4, maxBarThickness: 18 },
-        { label: 'Commission Paid', data: jobComparison.map((j) => j.commissionPaid), backgroundColor: '#6B3FD4', borderRadius: 4, maxBarThickness: 18 }
+        { label: 'Funds Received', data: jobComparison.map((j) => j.fundsReceived), backgroundColor: '#1B5E45', stack: 'received', borderRadius: 4, maxBarThickness: 18 },
+        { label: 'Commission Paid', data: jobComparison.map((j) => j.commissionPaid), backgroundColor: '#6B3FD4', stack: 'paidOut', borderRadius: 4, maxBarThickness: 18 },
+        { label: 'Staff Pay', data: jobComparison.map((j) => j.staffPaid || 0), backgroundColor: '#B6760F', stack: 'paidOut', borderRadius: 4, maxBarThickness: 18 }
       ]
     },
     options: {
@@ -50,8 +52,8 @@ function renderJobComparisonChart(canvasId, jobComparison) {
       maintainAspectRatio: false,
       plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 12 } } } },
       scales: {
-        x: { beginAtZero: true, ticks: { callback: (v) => '$' + v.toLocaleString() }, grid: { color: '#EFEDF6' } },
-        y: { grid: { display: false }, ticks: { font: { size: 11 } } }
+        x: { stacked: true, beginAtZero: true, ticks: { callback: (v) => '$' + v.toLocaleString() }, grid: { color: '#EFEDF6' } },
+        y: { stacked: true, grid: { display: false }, ticks: { font: { size: 11 } } }
       }
     }
   });

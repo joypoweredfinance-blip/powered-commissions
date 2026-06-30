@@ -120,7 +120,13 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
       SELECT d.id, d.customer_name,
              d.closer_paid, d.closer_paid_date, d.closer_pay_net,
              d.setter_paid, d.setter_paid_date, d.setter_pay,
-             d.funds_received_m1_date, d.funds_received_m1, d.funds_received_m2_date, d.funds_received_m2
+             d.funds_received_m1_date, d.funds_received_m1, d.funds_received_m2_date, d.funds_received_m2,
+             d.owner_etai_m1_paid, d.owner_etai_m1_paid_date, d.owner_etai_m1_amount,
+             d.owner_etai_m2_paid, d.owner_etai_m2_paid_date, d.owner_etai_m2_amount,
+             d.owner_noy_m1_paid, d.owner_noy_m1_paid_date, d.owner_noy_m1_amount,
+             d.owner_noy_m2_paid, d.owner_noy_m2_paid_date, d.owner_noy_m2_amount,
+             d.joey_m1_paid, d.joey_m1_paid_date, d.joey_m1_bonus,
+             d.joey_paid, d.joey_paid_date, d.joey_m2_bonus
       FROM deals d WHERE 1=1 ${statusFilterSql}${fundingStatusFilterSql}
     `, fundingStatusArgs)
   ]);
@@ -323,16 +329,32 @@ async function getOverallDashboard({ statusIds, fundingStatuses, startDate, endD
     const setterInRange = d.setter_paid && inRange(d.setter_paid_date, startDate, endDate);
     const m1InRange = inRange(d.funds_received_m1_date, startDate, endDate);
     const m2InRange = inRange(d.funds_received_m2_date, startDate, endDate);
+    const etaiM1InRange = d.owner_etai_m1_paid && inRange(d.owner_etai_m1_paid_date, startDate, endDate);
+    const etaiM2InRange = d.owner_etai_m2_paid && inRange(d.owner_etai_m2_paid_date, startDate, endDate);
+    const noyM1InRange = d.owner_noy_m1_paid && inRange(d.owner_noy_m1_paid_date, startDate, endDate);
+    const noyM2InRange = d.owner_noy_m2_paid && inRange(d.owner_noy_m2_paid_date, startDate, endDate);
+    const joeyM1InRange = d.joey_m1_paid && inRange(d.joey_m1_paid_date, startDate, endDate);
+    const joeyM2InRange = d.joey_paid && inRange(d.joey_paid_date, startDate, endDate);
+    const hasStaffPay = d.owner_etai_m1_paid || d.owner_etai_m2_paid || d.owner_noy_m1_paid || d.owner_noy_m2_paid || d.joey_m1_paid || d.joey_paid;
     const matches = !hasPeriod
-      ? (d.closer_paid || d.setter_paid || d.funds_received_m1 || d.funds_received_m2)
-      : (closerInRange || setterInRange || m1InRange || m2InRange);
+      ? (d.closer_paid || d.setter_paid || d.funds_received_m1 || d.funds_received_m2 || hasStaffPay)
+      : (closerInRange || setterInRange || m1InRange || m2InRange
+         || etaiM1InRange || etaiM2InRange || noyM1InRange || noyM2InRange || joeyM1InRange || joeyM2InRange);
     if (!matches) continue;
     const commissionPaid = round2((d.closer_paid ? d.closer_pay_net || 0 : 0) + (d.setter_paid ? d.setter_pay || 0 : 0));
+    // Staff Pay (Etai + Noy + Joey) — only the portion actually marked paid, same "paid" gate
+    // commissionPaid above already uses, so this chart only ever shows money that's truly gone
+    // out the door, never a projected/expected figure.
+    const staffPaid = round2(
+      (d.owner_etai_m1_paid ? d.owner_etai_m1_amount || 0 : 0) + (d.owner_etai_m2_paid ? d.owner_etai_m2_amount || 0 : 0)
+      + (d.owner_noy_m1_paid ? d.owner_noy_m1_amount || 0 : 0) + (d.owner_noy_m2_paid ? d.owner_noy_m2_amount || 0 : 0)
+      + (d.joey_m1_paid ? d.joey_m1_bonus || 0 : 0) + (d.joey_paid ? d.joey_m2_bonus || 0 : 0)
+    );
     const fundsReceived = round2((d.funds_received_m1 || 0) + (d.funds_received_m2 || 0));
-    if (!commissionPaid && !fundsReceived) continue;
-    jobComparisonAll.push({ customerName: d.customer_name, fundsReceived, commissionPaid });
+    if (!commissionPaid && !fundsReceived && !staffPaid) continue;
+    jobComparisonAll.push({ customerName: d.customer_name, fundsReceived, commissionPaid, staffPaid });
   }
-  jobComparisonAll.sort((a, b) => (b.fundsReceived + b.commissionPaid) - (a.fundsReceived + a.commissionPaid));
+  jobComparisonAll.sort((a, b) => (b.fundsReceived + b.commissionPaid + b.staffPaid) - (a.fundsReceived + a.commissionPaid + a.staffPaid));
   const jobComparisonTruncated = jobComparisonAll.length > 30;
   const jobComparison = jobComparisonAll.slice(0, 30);
 
