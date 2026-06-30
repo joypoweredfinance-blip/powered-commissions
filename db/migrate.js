@@ -67,7 +67,8 @@ const COLUMN_MIGRATIONS = [
   { table: 'deals', column: 'setter_calc_net_ppw', definition: 'REAL' },
   { table: 'deals', column: 'setter_calc_pay_scale_rate', definition: 'REAL' },
   { table: 'deals', column: 'setter_calc_rep_pool', definition: 'REAL' },
-  { table: 'deals', column: 'setter_calc_below_floor', definition: 'INTEGER NOT NULL DEFAULT 0' }
+  { table: 'deals', column: 'setter_calc_below_floor', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'deals', column: 'pay_scale_id', definition: 'INTEGER REFERENCES pay_scales(id)' }
 ];
 
 async function columnExists(table, column) {
@@ -179,6 +180,19 @@ async function runMigrations() {
   // 'both' too, or they'd silently disappear from one of the two dropdowns on the Deal page.
   const nonBothReps = await run(`UPDATE reps SET rep_type = 'both' WHERE rep_type != 'both'`);
   if (nonBothReps.rowsAffected) console.log(`Migration: set rep_type = 'both' for ${nonBothReps.rowsAffected} rep(s)`);
+
+  // Pay scale used to be derived purely from the closer rep's own assignment — now it's a
+  // direct, per-deal choice on the Commission Calculator. Backfilling from the closer's
+  // currently-assigned scale (falling back to Standard) reproduces exactly what every
+  // existing deal was already computing, so this never silently changes a real number.
+  const payScaleBackfill = await run(`
+    UPDATE deals SET pay_scale_id = COALESCE(
+      (SELECT pay_scale_id FROM reps WHERE reps.id = deals.closer_rep_id),
+      (SELECT id FROM pay_scales WHERE name = 'Standard')
+    )
+    WHERE pay_scale_id IS NULL
+  `);
+  if (payScaleBackfill.rowsAffected) console.log(`Migration: backfilled pay_scale_id for ${payScaleBackfill.rowsAffected} deal(s)`);
 }
 
 module.exports = { runMigrations, columnExists };

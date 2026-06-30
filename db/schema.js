@@ -108,6 +108,11 @@ module.exports = [
     status_id INTEGER REFERENCES deal_statuses(id),
     closer_rep_id INTEGER REFERENCES reps(id),
     setter_rep_id INTEGER REFERENCES reps(id),
+    -- Which pay scale's tiers/floor the Commission Calculator uses for this deal — Joy's own
+    -- direct choice, independent of whichever scale the closer rep happens to be assigned.
+    -- Defaults to the closer's assigned scale (or Standard) at creation, but is editable per
+    -- deal from then on.
+    pay_scale_id INTEGER REFERENCES pay_scales(id),
     pay_split REAL NOT NULL DEFAULT 0.50,
     is_referral INTEGER NOT NULL DEFAULT 0,
     installer_id INTEGER REFERENCES installers(id),

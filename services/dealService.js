@@ -14,8 +14,15 @@ const SETTER_CALC_INPUT_FIELDS = [
   'setter_calc_rate_per_kwh', 'setter_calc_monthly_payment'
 ];
 
+// Fields whose value directly feeds the commission formula, not just descriptive data —
+// saving any of these should auto-recalculate immediately rather than leave stale numbers
+// on screen until the next explicit Recalculate.
+const RECALC_TRIGGER_FIELDS = [...SETTER_CALC_INPUT_FIELDS, 'pay_scale_id'];
+
 const EDITABLE_FIELDS = [
   'customer_name', 'customer_address', 'customer_phone', 'status_id', 'closer_rep_id', 'setter_rep_id',
+  // Joy's own direct pick, not derived from the closer rep — see getPayScaleById().
+  'pay_scale_id',
   'pay_split', 'is_referral', 'installer_id', 'financier_id', 'module_type', 'battery_type', 'num_batteries',
   'system_size_kw', 'panel_count', 'panel_watts', 'annual_production_kwh', 'contract_value', 'epc_rate_per_watt',
   'monthly_payment', 'rate_per_kwh', 'escalator_pct', 'cashback_amount', 'date_signed', 'install_date',
@@ -54,12 +61,14 @@ async function getCommissionSettings() {
   return get(`SELECT * FROM commission_settings WHERE id = 1`);
 }
 
-async function getPayScaleForRep(repId) {
-  if (!repId) return getStandardScale();
-  const rep = await get(`SELECT pay_scale_id FROM reps WHERE id = ?`, [repId]);
-  if (!rep || !rep.pay_scale_id) return getStandardScale();
-  const scale = await get(`SELECT * FROM pay_scales WHERE id = ?`, [rep.pay_scale_id]);
-  const tiers = await all(`SELECT net_ppw_threshold, dollar_per_kw FROM pay_scale_tiers WHERE pay_scale_id = ? ORDER BY net_ppw_threshold ASC`, [rep.pay_scale_id]);
+// The deal's own direct choice of pay scale — independent of whichever scale the closer rep
+// happens to be assigned, per Joy's request to control this explicitly per deal rather than
+// have it silently follow the rep.
+async function getPayScaleById(payScaleId) {
+  if (!payScaleId) return getStandardScale();
+  const scale = await get(`SELECT * FROM pay_scales WHERE id = ?`, [payScaleId]);
+  if (!scale) return getStandardScale();
+  const tiers = await all(`SELECT net_ppw_threshold, dollar_per_kw FROM pay_scale_tiers WHERE pay_scale_id = ? ORDER BY net_ppw_threshold ASC`, [payScaleId]);
   return { id: scale.id, name: scale.name, hard_floor_ppw: scale.hard_floor_ppw, tiers };
 }
 
@@ -171,6 +180,14 @@ async function createDeal(data, userId) {
     const firstStatus = await get(`SELECT id FROM deal_statuses WHERE active = 1 ORDER BY sort_order ASC LIMIT 1`);
     if (firstStatus) data.status_id = firstStatus.id;
   }
+  // Starting point only, not a dependency — defaults to whatever scale the closer is
+  // currently assigned (or Standard), but from here on it's the deal's own field, editable
+  // independently of the rep on the Commission Calculator.
+  if (data.pay_scale_id === undefined || data.pay_scale_id === null) {
+    const repScale = data.closer_rep_id ? await get(`SELECT pay_scale_id FROM reps WHERE id = ?`, [data.closer_rep_id]) : null;
+    const standard = await get(`SELECT id FROM pay_scales WHERE name = 'Standard'`);
+    data.pay_scale_id = (repScale && repScale.pay_scale_id) || (standard && standard.id) || null;
+  }
   const fields = EDITABLE_FIELDS.filter((f) => data[f] !== undefined);
   const placeholders = fields.map(() => '?').join(', ');
   const values = fields.map((f) => data[f]);
@@ -199,7 +216,7 @@ async function updateDeal(id, data, userId, reason = null) {
   // second, surprise change to the commission numbers. setter_calc_* inputs are the one
   // exception: they're commission-relevant the same way adders are, so saving one of them
   // auto-recalculates the Setter Calculator's outputs immediately, with no extra click needed.
-  if (fields.some((f) => SETTER_CALC_INPUT_FIELDS.includes(f))) {
+  if (fields.some((f) => RECALC_TRIGGER_FIELDS.includes(f))) {
     return recalculate(id, userId);
   }
   return getDeal(id);
@@ -224,7 +241,7 @@ async function recalculate(id, userId, { force = false } = {}) {
   }
 
   const adders = await all(`SELECT amount, counts_as_hard_cost FROM deal_adders WHERE deal_id = ?`, [id]);
-  const payScale = await getPayScaleForRep(deal.closer_rep_id);
+  const payScale = await getPayScaleById(deal.pay_scale_id);
   const settings = await getCommissionSettings();
   const installer = deal.installer_id ? await get(`SELECT m1_pct, m2_pct FROM installers WHERE id = ?`, [deal.installer_id]) : null;
 
@@ -525,7 +542,7 @@ async function deleteEstimateFile(dealId, slot, userId) {
 module.exports = {
   listDeals, getDeal, createDeal, updateDeal, recalculate,
   addAdder, updateAdder, deleteAdder, setApproval, setPaymentFlag, setOverride, deleteDeal,
-  getCommissionSettings, getPayScaleForRep,
+  getCommissionSettings, getPayScaleById,
   setEstimateFile, getEstimateFileBlob, deleteEstimateFile,
   setAdderFile, getAdderFileBlob, deleteAdderFile
 };

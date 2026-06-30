@@ -507,6 +507,7 @@ function renderCalc() {
   // would double-attach listeners on Closer's buttons (still in the DOM from the first call)
   // every time the Setter card also rendered.
   wireCalcAmountSaveButtons();
+  wirePayScaleSelector();
   renderFundsReceived();
 }
 
@@ -523,9 +524,38 @@ function closerAdderCategoryTotals(adders) {
   return totals;
 }
 
+// Small, deliberate: Joy's own direct pick of which tier table this deal uses, independent of
+// whichever scale the closer rep happens to be assigned on the Reps page. Drives both this
+// card's calculation and the Setter Calculator's (they always share one scale per deal).
+function payScaleSelectorHtml(d) {
+  const options = (META.payScales || []).map((p) => `<option value="${p.id}" ${String(p.id) === String(d.pay_scale_id) ? 'selected' : ''}>${p.name}</option>`).join('');
+  return `
+    <div class="calc-line">
+      <span class="lbl">Pay Scale</span>
+      <span class="val" style="display:flex; align-items:center; gap:6px; font-weight:400;">
+        <select id="payScaleSelect" style="margin:0; max-width:170px; padding:4px 8px; font-weight:700;">${options}</select>
+        <button class="btn secondary small" id="payScaleSaveBtn" style="width:auto; padding:4px 10px;">Save</button>
+      </span>
+    </div>
+  `;
+}
+
+function wirePayScaleSelector() {
+  const btn = document.getElementById('payScaleSaveBtn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const value = document.getElementById('payScaleSelect').value;
+    try {
+      DEAL = await api('PUT', `/api/deals/${dealId}`, { pay_scale_id: Number(value) });
+      renderCalc();
+    } catch (e) { alert(e.message); }
+  });
+}
+
 function renderCloserCalc() {
   const d = DEAL;
   let html = '';
+  html += payScaleSelectorHtml(d);
   if (d.below_floor) {
     html += `<div class="error-msg show" style="margin-bottom:14px;">Below the pay-scale hard floor — needs manual approval before any commission is paid.</div>`;
   }
