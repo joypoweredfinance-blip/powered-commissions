@@ -281,12 +281,15 @@ async function load() {
         <span>All Financiers</span>
         <strong>${fmtMoney(d.fundsByFinancierTotal)}</strong>
       </div>
-      ${d.fundsByFinancier.map((f) => `
+      ${d.fundsByFinancier.map((f) => {
+        const pct = d.fundsByFinancierTotal > 0 ? ((f.total / d.fundsByFinancierTotal) * 100).toFixed(1) : '0.0';
+        return `
         <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--brand-border);">
           <span>${f.name}</span>
-          <strong>${fmtMoney(f.total)}</strong>
+          <span><strong>${fmtMoney(f.total)}</strong> <span style="color:var(--brand-muted); font-size:12px;">(${pct}%)</span></span>
         </div>
-      `).join('')}
+      `;
+      }).join('')}
     `;
 
   if (chartInstance) chartInstance.destroy();
