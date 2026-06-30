@@ -20,4 +20,11 @@ async function all(sql, args = []) {
   return res.rows;
 }
 
-module.exports = { client, run, get, all };
+// Executes multiple independent SQL strings as a single network round-trip to Turso.
+// Use for DDL batches (CREATE TABLE, CREATE INDEX) and write batches (INSERT, UPDATE)
+// where statements don't need each other's results. N round-trips become 1.
+async function batchRun(statements) {
+  return client.batch(statements.map((sql) => ({ sql, args: [] })), 'write');
+}
+
+module.exports = { client, run, get, all, batchRun };

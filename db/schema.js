@@ -362,5 +362,23 @@ module.exports = [
     approved_by TEXT,
     notes TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`
+  )`,
+
+  // Indexes — none of these exist by default (only PRIMARY KEY and UNIQUE get auto-indexed).
+  // Without them every getDeal() does a full audit_log table scan, every recalculate() does
+  // full scans of deal_adders and pay_scale_tiers, and every listDeals() filter hits deals
+  // without an index. All use IF NOT EXISTS so they're safe to re-run on every boot.
+  `CREATE INDEX IF NOT EXISTS idx_audit_log_record     ON audit_log(table_name, record_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_deal_adders_deal     ON deal_adders(deal_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_deal_adder_files     ON deal_adder_files(adder_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_deal_estimate_files  ON deal_estimate_files(deal_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_pay_scale_tiers      ON pay_scale_tiers(pay_scale_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_advances_deal        ON advances(deal_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_clawbacks_deal       ON clawbacks(deal_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_deals_closer         ON deals(closer_rep_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_deals_setter         ON deals(setter_rep_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_deals_status         ON deals(status_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_deals_solar_date     ON deals(install_completed_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_deals_financier      ON deals(financier_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_sessions_expires     ON sessions(expires)`
 ];

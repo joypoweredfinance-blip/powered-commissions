@@ -66,9 +66,11 @@ async function getCommissionSettings() {
 // have it silently follow the rep.
 async function getPayScaleById(payScaleId) {
   if (!payScaleId) return getStandardScale();
-  const scale = await get(`SELECT * FROM pay_scales WHERE id = ?`, [payScaleId]);
+  const [scale, tiers] = await Promise.all([
+    get(`SELECT * FROM pay_scales WHERE id = ?`, [payScaleId]),
+    all(`SELECT net_ppw_threshold, dollar_per_kw FROM pay_scale_tiers WHERE pay_scale_id = ? ORDER BY net_ppw_threshold ASC`, [payScaleId])
+  ]);
   if (!scale) return getStandardScale();
-  const tiers = await all(`SELECT net_ppw_threshold, dollar_per_kw FROM pay_scale_tiers WHERE pay_scale_id = ? ORDER BY net_ppw_threshold ASC`, [payScaleId]);
   return { id: scale.id, name: scale.name, hard_floor_ppw: scale.hard_floor_ppw, tiers };
 }
 
@@ -240,10 +242,12 @@ async function recalculate(id, userId, { force = false } = {}) {
     await run(`UPDATE deals SET manual_override = 0, overridden_fields = '[]', field_override_reasons = '{}' WHERE id = ?`, [id]);
   }
 
-  const adders = await all(`SELECT amount, counts_as_hard_cost FROM deal_adders WHERE deal_id = ?`, [id]);
-  const payScale = await getPayScaleById(deal.pay_scale_id);
-  const settings = await getCommissionSettings();
-  const installer = deal.installer_id ? await get(`SELECT m1_pct, m2_pct FROM installers WHERE id = ?`, [deal.installer_id]) : null;
+  const [adders, payScale, settings, installer] = await Promise.all([
+    all(`SELECT amount, counts_as_hard_cost FROM deal_adders WHERE deal_id = ?`, [id]),
+    getPayScaleById(deal.pay_scale_id),
+    getCommissionSettings(),
+    deal.installer_id ? get(`SELECT m1_pct, m2_pct FROM installers WHERE id = ?`, [deal.installer_id]) : Promise.resolve(null)
+  ]);
 
   const result = calculateRepCommission({
     deal: {
