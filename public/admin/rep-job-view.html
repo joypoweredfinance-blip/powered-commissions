@@ -47,7 +47,7 @@ async function load() {
       <div style="display:flex; justify-content:flex-end; margin-bottom:10px;" class="no-print">
         <button class="btn secondary small" onclick="window.print()">⬇ Export PDF</button>
       </div>
-      <div class="badge muted" style="margin-bottom:10px;">This is exactly what ${j.rep.display_name || j.rep.full_name} sees — nothing here is editable.</div>
+      <div class="badge muted no-print" style="margin-bottom:10px;">This is exactly what ${j.rep.display_name || j.rep.full_name} sees — nothing here is editable.</div>
       <div class="breakdown-header role-${j.viewRole}">
         <div class="role-label">${isCloser ? 'Final Breakdown · Closer' : 'Setter Pay Breakdown'}</div>
         <div class="customer">${j.customer_name}</div>
