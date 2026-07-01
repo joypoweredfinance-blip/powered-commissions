@@ -969,15 +969,32 @@ function renderPayment() {
   const el = document.getElementById('card-payment');
   const naFlags = (() => { try { return JSON.parse(d.payment_na_flags || '{}'); } catch (e) { return {}; } })();
 
-  function statusBadge(recipient, paid, paidDate) {
-    if (naFlags[recipient]) return `<span style="font-size:12px; color:var(--brand-muted);">N/A</span>`;
-    if (paid) return `<span style="font-size:12px;">✅ Paid ${fmtDate((paidDate || '').slice(0, 10))}</span>`;
-    return `<span style="font-size:12px; color:var(--brand-muted);">⏳ Not yet paid</span>`;
+  const NA_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="color:var(--brand-muted); vertical-align:-2px;" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="8" y1="12" x2="16" y2="12"/></svg>`;
+  const PENDING_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="color:var(--brand-muted); vertical-align:-2px;" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>`;
+
+  // Returns [iconHtml, textHtml] as two separate cells for the 3-col grid.
+  function statusCols(recipient, paid, paidDate) {
+    if (naFlags[recipient]) {
+      return [
+        `<div style="text-align:center;">${NA_ICON}</div>`,
+        `<div style="font-size:12px; color:var(--brand-muted);">N/A</div>`
+      ];
+    }
+    if (paid) {
+      return [
+        `<div style="text-align:center; font-size:15px; line-height:1;">✅</div>`,
+        `<div style="font-size:12px;">Paid ${fmtDate((paidDate || '').slice(0, 10))}</div>`
+      ];
+    }
+    return [
+      `<div style="text-align:center;">${PENDING_ICON}</div>`,
+      `<div style="font-size:12px; color:var(--brand-muted);">Not yet paid</div>`
+    ];
   }
 
   function statusSelect(recipient, paid, paidDate) {
     const cur = naFlags[recipient] ? 'na' : paid ? 'paid' : 'pending';
-    return `<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+    return `<div style="grid-column:2/4; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
       <select class="pay-select" data-recipient="${recipient}" style="margin:0; padding:4px 6px; font-size:13px; width:auto;">
         <option value="pending" ${cur === 'pending' ? 'selected' : ''}>⏳ Not yet paid</option>
         <option value="paid" ${cur === 'paid' ? 'selected' : ''}>✅ Paid</option>
@@ -994,14 +1011,17 @@ function renderPayment() {
     </div>`;
   }
 
+  // 3-col grid: [name+amount] [icon] [status text]. In edit mode the select spans cols 2-3.
   function payRow(label, recipient, paid, amount, paidDate) {
-    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--brand-border); gap:8px;">
+    const [ic, tx] = statusCols(recipient, paid, paidDate);
+    return `<div style="display:grid; grid-template-columns:1fr 28px 150px; align-items:center; padding:8px 0; border-bottom:1px solid var(--brand-border);">
       ${labelCell(label, amount)}
-      ${editing ? statusSelect(recipient, paid, paidDate) : statusBadge(recipient, paid, paidDate)}
+      ${editing ? statusSelect(recipient, paid, paidDate) : `${ic}${tx}`}
     </div>`;
   }
 
   function internalRow(label, recipient, paid, amount, paidDate, overrideField, reason) {
+    const [ic, tx] = statusCols(recipient, paid, paidDate);
     const overrideHtml = editing
       ? `<div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
            <input type="number" step="0.01" class="amount-override" data-field="${overrideField}" value="${amount ?? ''}" style="margin:0; max-width:140px;">
@@ -1010,9 +1030,9 @@ function renderPayment() {
          ${reason ? `<div style="font-size:11px; color:var(--brand-muted); margin-top:2px;">Override reason: ${reason}</div>` : ''}`
       : '';
     return `<div style="padding:8px 0 8px 14px; border-bottom:1px solid var(--brand-border);">
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+      <div style="display:grid; grid-template-columns:1fr 28px 150px; align-items:center;">
         ${labelCell(label, amount)}
-        ${editing ? statusSelect(recipient, paid, paidDate) : statusBadge(recipient, paid, paidDate)}
+        ${editing ? statusSelect(recipient, paid, paidDate) : `${ic}${tx}`}
       </div>
       ${overrideHtml}
     </div>`;
