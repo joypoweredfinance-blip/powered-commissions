@@ -6,116 +6,195 @@
 <title>Installers & Financiers — POWERED Commissions</title>
 <link rel="stylesheet" href="/shared/brand.css">
 <link rel="stylesheet" href="/admin/admin.css">
+<style>
+.ref-row {
+  display: flex;
+  gap: 20px;
+  align-items: baseline;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--brand-border);
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.ref-row:last-child { border-bottom: none; }
+.ref-name { font-weight: 600; min-width: 110px; color: var(--brand-black); }
+.ref-attr { color: var(--brand-muted); }
+.ref-notes { color: var(--brand-muted); flex: 1; font-style: italic; }
+.edit-row {
+  display: none;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--brand-border);
+  flex-wrap: wrap;
+}
+.edit-row:last-child { border-bottom: none; }
+.edit-row input[type="text"], .edit-row input[type="number"] {
+  margin: 0; padding: 6px 8px; font-size: 13px;
+}
+.edit-row .f-name { width: 120px; }
+.edit-row .f-rate { width: 72px; }
+.edit-row .f-pct  { width: 60px; }
+.edit-row .f-fico { width: 72px; }
+.edit-row .f-notes { flex: 1; min-width: 140px; }
+.add-form input { margin-bottom: 0; padding: 7px 10px; font-size: 13px; }
+.add-form label { font-size: 12px; margin-bottom: 3px; }
+.add-form .field { display: flex; flex-direction: column; }
+</style>
 </head>
 <body>
 <script src="/admin/admin-common.js"></script>
 <script>renderAdminShell('/admin/installers.html', 'Installers & Financiers');</script>
 <script>
 document.getElementById('pageContent').innerHTML = `
-  <div class="card" style="margin-bottom:16px; overflow-x:auto;">
-    <p class="section-title">Installers <span style="font-weight:400; text-transform:none; font-size:12px;">— click any field to edit, changes save automatically</span></p>
-    <table class="data-table">
-      <thead><tr><th>Name</th><th>Rate/W</th><th>M1%</th><th>M2%</th><th>Notes</th><th>Status</th><th></th></tr></thead>
-      <tbody id="installersBody"></tbody>
-    </table>
-  </div>
-  <div class="card" style="margin-bottom:24px; max-width:560px;">
-    <p class="section-title">Add Installer</p>
-    <div class="field-row cols-3">
-      <div><label>Name</label><input type="text" id="ni_name"></div>
-      <div><label>Rate ($/W)</label><input type="number" step="0.01" id="ni_rate"></div>
-      <div></div>
-    </div>
-    <div class="field-row">
-      <div><label>M1 %</label><input type="number" step="0.01" id="ni_m1"></div>
-      <div><label>M2 %</label><input type="number" step="0.01" id="ni_m2"></div>
-    </div>
-    <label>Notes</label><input type="text" id="ni_notes">
-    <button class="btn small" id="addInstallerBtn" style="width:auto;">Add Installer</button>
-  </div>
+  <div style="max-width:860px; display:flex; flex-direction:column; gap:20px;">
 
-  <div class="card" style="margin-bottom:16px; overflow-x:auto;">
-    <p class="section-title">Financiers <span style="font-weight:400; text-transform:none; font-size:12px;">— click any field to edit, changes save automatically</span></p>
-    <table class="data-table">
-      <thead><tr><th>Name</th><th>Min FICO</th><th>Notes</th><th>Status</th><th></th></tr></thead>
-      <tbody id="financiersBody"></tbody>
-    </table>
-  </div>
-  <div class="card" style="max-width:560px;">
-    <p class="section-title">Add Financier</p>
-    <label>Name</label><input type="text" id="nf_name">
-    <label>Min FICO</label><input type="number" id="nf_fico">
-    <label>Notes</label><input type="text" id="nf_notes">
-    <button class="btn small" id="addFinancierBtn" style="width:auto;">Add Financier</button>
+    <div class="card">
+      <div class="section-header">
+        <p class="section-title" style="margin:0;">Installers</p>
+        <button class="btn secondary small" id="editInstBtn" style="width:auto;">Edit</button>
+      </div>
+      <div id="installersBody" style="margin-top:10px;"></div>
+      <details style="margin-top:16px;">
+        <summary style="font-size:12px; font-weight:600; color:var(--brand-muted); cursor:pointer; user-select:none; text-transform:uppercase; letter-spacing:0.04em;">Add Installer</summary>
+        <div class="add-form" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin-top:12px; align-items:end;">
+          <div class="field"><label>Name</label><input type="text" id="ni_name"></div>
+          <div class="field"><label>Rate ($/W)</label><input type="number" step="0.01" id="ni_rate"></div>
+          <div class="field"><label>M1 %</label><input type="number" step="0.01" id="ni_m1"></div>
+          <div class="field"><label>M2 %</label><input type="number" step="0.01" id="ni_m2"></div>
+          <div class="field" style="grid-column:span 2;"><label>Notes</label><input type="text" id="ni_notes"></div>
+          <div class="field" style="justify-content:flex-end;">
+            <button class="btn small" id="addInstallerBtn" style="width:auto; margin-top:18px;">Add</button>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <div class="section-header">
+        <p class="section-title" style="margin:0;">Financiers</p>
+        <button class="btn secondary small" id="editFinBtn" style="width:auto;">Edit</button>
+      </div>
+      <div id="financiersBody" style="margin-top:10px;"></div>
+      <details style="margin-top:16px;">
+        <summary style="font-size:12px; font-weight:600; color:var(--brand-muted); cursor:pointer; user-select:none; text-transform:uppercase; letter-spacing:0.04em;">Add Financier</summary>
+        <div class="add-form" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin-top:12px; align-items:end;">
+          <div class="field"><label>Name</label><input type="text" id="nf_name"></div>
+          <div class="field"><label>Min FICO</label><input type="number" id="nf_fico"></div>
+          <div class="field" style="grid-column:span 2;"><label>Notes</label><input type="text" id="nf_notes"></div>
+          <div class="field" style="justify-content:flex-end;">
+            <button class="btn small" id="addFinancierBtn" style="width:auto; margin-top:18px;">Add</button>
+          </div>
+        </div>
+      </details>
+    </div>
+
   </div>
 `;
 
-function editableCell(cls, id, type, value, step) {
-  return `<input type="${type}" class="${cls}" data-id="${id}" ${step ? `step="${step}"` : ''} value="${value ?? ''}" style="margin:0; min-width:90px;">`;
+let instEditing = false;
+let finEditing = false;
+
+function fmtPct(v) { return v != null && v !== '' ? Number(v).toFixed(2) : '—'; }
+function fmtRate(v) { return v != null && v !== '' ? '$' + Number(v).toFixed(2) : '—'; }
+
+function renderInstallers(installers) {
+  document.getElementById('installersBody').innerHTML = installers.map((i) => `
+    <div class="ref-row" id="inst-display-${i.id}" style="${i.active ? '' : 'opacity:0.5;'}">
+      <span class="ref-name">${i.name || '—'}${!i.active ? ' <span class="badge muted" style="font-size:10px; padding:1px 6px;">Inactive</span>' : ''}</span>
+      <span class="ref-attr">${fmtRate(i.rate_per_watt)}/W</span>
+      <span class="ref-attr">M1: ${fmtPct(i.m1_pct)}</span>
+      <span class="ref-attr">M2: ${fmtPct(i.m2_pct)}</span>
+      ${i.notes ? `<span class="ref-notes">${i.notes}</span>` : ''}
+    </div>
+    <div class="edit-row" id="inst-edit-${i.id}" style="${i.active ? '' : 'opacity:0.7;'}">
+      <input type="text"   class="inst-name  f-name"  data-id="${i.id}" value="${i.name ?? ''}">
+      <input type="number" class="inst-rate  f-rate"  data-id="${i.id}" value="${i.rate_per_watt ?? ''}" step="0.01" placeholder="$/W">
+      <input type="number" class="inst-m1    f-pct"   data-id="${i.id}" value="${i.m1_pct ?? ''}"        step="0.01" placeholder="M1">
+      <input type="number" class="inst-m2    f-pct"   data-id="${i.id}" value="${i.m2_pct ?? ''}"        step="0.01" placeholder="M2">
+      <input type="text"   class="inst-notes f-notes" data-id="${i.id}" value="${i.notes ?? ''}" placeholder="Notes">
+      <button class="btn secondary small inst-toggle" data-id="${i.id}" data-active="${i.active}" style="width:auto; white-space:nowrap;">${i.active ? 'Deactivate' : 'Reactivate'}</button>
+      <button class="icon-btn inst-delete" data-id="${i.id}" title="Delete">🗑️</button>
+    </div>
+  `).join('');
+  applyInstMode();
+  wireInstallers();
 }
 
-async function loadAll() {
-  const data = await api('GET', '/api/reference');
-
-  document.getElementById('installersBody').innerHTML = data.installers.map((i) => `
-    <tr data-id="${i.id}" style="${i.active ? '' : 'opacity:0.55;'}">
-      <td>${editableCell('inst-name', i.id, 'text', i.name)}</td>
-      <td>${editableCell('inst-rate', i.id, 'number', i.rate_per_watt, '0.01')}</td>
-      <td>${editableCell('inst-m1', i.id, 'number', i.m1_pct, '0.01')}</td>
-      <td>${editableCell('inst-m2', i.id, 'number', i.m2_pct, '0.01')}</td>
-      <td>${editableCell('inst-notes', i.id, 'text', i.notes)}</td>
-      <td><button class="btn secondary small inst-toggle" data-id="${i.id}" data-active="${i.active}" style="width:auto;">${i.active ? 'Deactivate' : 'Reactivate'}</button></td>
-      <td><button class="icon-btn inst-delete" data-id="${i.id}" title="Delete">🗑️</button></td>
-    </tr>
+function renderFinanciers(financiers) {
+  document.getElementById('financiersBody').innerHTML = financiers.map((f) => `
+    <div class="ref-row" id="fin-display-${f.id}" style="${f.active ? '' : 'opacity:0.5;'}">
+      <span class="ref-name">${f.name || '—'}${!f.active ? ' <span class="badge muted" style="font-size:10px; padding:1px 6px;">Inactive</span>' : ''}</span>
+      ${f.min_fico ? `<span class="ref-attr">FICO ${f.min_fico}+</span>` : ''}
+      ${f.notes ? `<span class="ref-notes">${f.notes}</span>` : ''}
+    </div>
+    <div class="edit-row" id="fin-edit-${f.id}" style="${f.active ? '' : 'opacity:0.7;'}">
+      <input type="text"   class="fin-name  f-name"  data-id="${f.id}" value="${f.name ?? ''}">
+      <input type="number" class="fin-fico  f-fico"  data-id="${f.id}" value="${f.min_fico ?? ''}" placeholder="Min FICO">
+      <input type="text"   class="fin-notes f-notes" data-id="${f.id}" value="${f.notes ?? ''}" placeholder="Notes">
+      <button class="btn secondary small fin-toggle" data-id="${f.id}" data-active="${f.active}" style="width:auto; white-space:nowrap;">${f.active ? 'Deactivate' : 'Reactivate'}</button>
+      <button class="icon-btn fin-delete" data-id="${f.id}" title="Delete">🗑️</button>
+    </div>
   `).join('');
-
-  document.getElementById('financiersBody').innerHTML = data.financiers.map((f) => `
-    <tr data-id="${f.id}" style="${f.active ? '' : 'opacity:0.55;'}">
-      <td>${editableCell('fin-name', f.id, 'text', f.name)}</td>
-      <td>${editableCell('fin-fico', f.id, 'number', f.min_fico)}</td>
-      <td>${editableCell('fin-notes', f.id, 'text', f.notes)}</td>
-      <td><button class="btn secondary small fin-toggle" data-id="${f.id}" data-active="${f.active}" style="width:auto;">${f.active ? 'Deactivate' : 'Reactivate'}</button></td>
-      <td><button class="icon-btn fin-delete" data-id="${f.id}" title="Delete">🗑️</button></td>
-    </tr>
-  `).join('');
-
-  wireEditableRows();
+  applyFinMode();
+  wireFinanciers();
 }
 
-function wireEditableRows() {
-  async function saveInstaller(id, field, value) {
+function applyInstMode() {
+  document.querySelectorAll('[id^="inst-display-"]').forEach(el => el.style.display = instEditing ? 'none' : 'flex');
+  document.querySelectorAll('[id^="inst-edit-"]').forEach(el => el.style.display = instEditing ? 'flex' : 'none');
+  document.getElementById('editInstBtn').textContent = instEditing ? 'Done' : 'Edit';
+}
+function applyFinMode() {
+  document.querySelectorAll('[id^="fin-display-"]').forEach(el => el.style.display = finEditing ? 'none' : 'flex');
+  document.querySelectorAll('[id^="fin-edit-"]').forEach(el => el.style.display = finEditing ? 'flex' : 'none');
+  document.getElementById('editFinBtn').textContent = finEditing ? 'Done' : 'Edit';
+}
+
+function wireInstallers() {
+  async function save(id, field, value) {
     try { await api('PUT', `/api/reference/installers/${id}`, { [field]: value }); } catch (e) { alert(e.message); }
   }
-  async function saveFinancier(id, field, value) {
-    try { await api('PUT', `/api/reference/financiers/${id}`, { [field]: value }); } catch (e) { alert(e.message); }
-  }
-
-  document.querySelectorAll('.inst-name').forEach((el) => el.addEventListener('change', () => saveInstaller(el.dataset.id, 'name', el.value.trim())));
-  document.querySelectorAll('.inst-rate').forEach((el) => el.addEventListener('change', () => saveInstaller(el.dataset.id, 'rate_per_watt', parseFloat(el.value) || null)));
-  document.querySelectorAll('.inst-m1').forEach((el) => el.addEventListener('change', () => saveInstaller(el.dataset.id, 'm1_pct', parseFloat(el.value) || null)));
-  document.querySelectorAll('.inst-m2').forEach((el) => el.addEventListener('change', () => saveInstaller(el.dataset.id, 'm2_pct', parseFloat(el.value) || null)));
-  document.querySelectorAll('.inst-notes').forEach((el) => el.addEventListener('change', () => saveInstaller(el.dataset.id, 'notes', el.value.trim() || null)));
-  document.querySelectorAll('.inst-toggle').forEach((btn) => btn.addEventListener('click', async () => {
-    await saveInstaller(btn.dataset.id, 'active', btn.dataset.active === '1' ? 0 : 1);
+  document.querySelectorAll('.inst-name').forEach(el => el.addEventListener('change', () => save(el.dataset.id, 'name', el.value.trim())));
+  document.querySelectorAll('.inst-rate').forEach(el => el.addEventListener('change', () => save(el.dataset.id, 'rate_per_watt', parseFloat(el.value) || null)));
+  document.querySelectorAll('.inst-m1').forEach(el => el.addEventListener('change', () => save(el.dataset.id, 'm1_pct', parseFloat(el.value) || null)));
+  document.querySelectorAll('.inst-m2').forEach(el => el.addEventListener('change', () => save(el.dataset.id, 'm2_pct', parseFloat(el.value) || null)));
+  document.querySelectorAll('.inst-notes').forEach(el => el.addEventListener('change', () => save(el.dataset.id, 'notes', el.value.trim() || null)));
+  document.querySelectorAll('.inst-toggle').forEach(btn => btn.addEventListener('click', async () => {
+    await save(btn.dataset.id, 'active', btn.dataset.active === '1' ? 0 : 1);
     loadAll();
   }));
-  document.querySelectorAll('.inst-delete').forEach((btn) => btn.addEventListener('click', async () => {
+  document.querySelectorAll('.inst-delete').forEach(btn => btn.addEventListener('click', async () => {
     if (!confirm('Delete this installer permanently? Only works if no deals reference it.')) return;
     try { await api('DELETE', `/api/reference/installers/${btn.dataset.id}`); loadAll(); } catch (e) { alert(e.message); }
   }));
+}
 
-  document.querySelectorAll('.fin-name').forEach((el) => el.addEventListener('change', () => saveFinancier(el.dataset.id, 'name', el.value.trim())));
-  document.querySelectorAll('.fin-fico').forEach((el) => el.addEventListener('change', () => saveFinancier(el.dataset.id, 'min_fico', parseInt(el.value) || null)));
-  document.querySelectorAll('.fin-notes').forEach((el) => el.addEventListener('change', () => saveFinancier(el.dataset.id, 'notes', el.value.trim() || null)));
-  document.querySelectorAll('.fin-toggle').forEach((btn) => btn.addEventListener('click', async () => {
-    await saveFinancier(btn.dataset.id, 'active', btn.dataset.active === '1' ? 0 : 1);
+function wireFinanciers() {
+  async function save(id, field, value) {
+    try { await api('PUT', `/api/reference/financiers/${id}`, { [field]: value }); } catch (e) { alert(e.message); }
+  }
+  document.querySelectorAll('.fin-name').forEach(el => el.addEventListener('change', () => save(el.dataset.id, 'name', el.value.trim())));
+  document.querySelectorAll('.fin-fico').forEach(el => el.addEventListener('change', () => save(el.dataset.id, 'min_fico', parseInt(el.value) || null)));
+  document.querySelectorAll('.fin-notes').forEach(el => el.addEventListener('change', () => save(el.dataset.id, 'notes', el.value.trim() || null)));
+  document.querySelectorAll('.fin-toggle').forEach(btn => btn.addEventListener('click', async () => {
+    await save(btn.dataset.id, 'active', btn.dataset.active === '1' ? 0 : 1);
     loadAll();
   }));
-  document.querySelectorAll('.fin-delete').forEach((btn) => btn.addEventListener('click', async () => {
+  document.querySelectorAll('.fin-delete').forEach(btn => btn.addEventListener('click', async () => {
     if (!confirm('Delete this financier permanently? Only works if no deals reference it.')) return;
     try { await api('DELETE', `/api/reference/financiers/${btn.dataset.id}`); loadAll(); } catch (e) { alert(e.message); }
   }));
 }
+
+async function loadAll() {
+  const data = await api('GET', '/api/reference');
+  renderInstallers(data.installers);
+  renderFinanciers(data.financiers);
+}
+
+document.getElementById('editInstBtn').addEventListener('click', () => { instEditing = !instEditing; applyInstMode(); });
+document.getElementById('editFinBtn').addEventListener('click', () => { finEditing = !finEditing; applyFinMode(); });
 
 document.getElementById('addInstallerBtn').addEventListener('click', async () => {
   const name = document.getElementById('ni_name').value.trim();
@@ -128,7 +207,7 @@ document.getElementById('addInstallerBtn').addEventListener('click', async () =>
       m2_pct: parseFloat(document.getElementById('ni_m2').value) || null,
       notes: document.getElementById('ni_notes').value.trim() || null
     });
-    ['ni_name', 'ni_rate', 'ni_m1', 'ni_m2', 'ni_notes'].forEach((id) => { document.getElementById(id).value = ''; });
+    ['ni_name','ni_rate','ni_m1','ni_m2','ni_notes'].forEach(id => { document.getElementById(id).value = ''; });
     loadAll();
   } catch (e) { alert(e.message); }
 });
@@ -142,7 +221,7 @@ document.getElementById('addFinancierBtn').addEventListener('click', async () =>
       min_fico: parseInt(document.getElementById('nf_fico').value) || null,
       notes: document.getElementById('nf_notes').value.trim() || null
     });
-    ['nf_name', 'nf_fico', 'nf_notes'].forEach((id) => { document.getElementById(id).value = ''; });
+    ['nf_name','nf_fico','nf_notes'].forEach(id => { document.getElementById(id).value = ''; });
     loadAll();
   } catch (e) { alert(e.message); }
 });
