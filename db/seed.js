@@ -21,26 +21,25 @@ const V1_TIERS = [
 const STATUSES = [
   ['Site Scheduled', 'pre_install'],
   ['Live Inspection', 'pre_install'],
-  ['Post Inspection', 'pre_install'],
   ['Awaiting SOW', 'pre_install'],
+  ['PWRD SOW - Needed', 'pre_install'],
   ['Results Received - Schedule Install', 'pre_install'],
-  ['Pre-Install - Needs Attention', 'pre_install'],
-  ['SOW Approved - Pending Permits/HOA', 'pre_install'],
+  ['Pre-Installed - Needs Attention', 'pre_install'],
+  ['SOW Approved - Pending Permits/HOA/MS/ETC', 'pre_install'],
   ['Roof Work Scheduled', 'pre_install'],
   ['Roof Work Started', 'pre_install'],
   ['Roof Work Completed', 'pre_install'],
   ['Solar Install Scheduled', 'pre_install'],
-  ['Solar Install Started', 'pre_install'],
+  ['Solar Install Started - Awaiting Completion', 'pre_install'],
   ['Post Install - Needs Attention', 'pre_install'],
-  ['Install Complete - Awaiting Funding', 'post_install'],
-  ['M1 Approved', 'post_install'],
-  ['M1 Paid / Final Passed', 'post_install'],
-  ['PTO Approved', 'post_install'],
-  ['M2 Approved', 'post_install'],
+  ['Solar Install Complete - Awaiting Funding', 'post_install'],
+  ['Commission Paid - Awaiting PTO', 'post_install'],
+  ['Paid Out - Awaiting M2', 'post_install'],
   ['Job Completed - Troubleshoot', 'post_install'],
   ['Completed', 'closed'],
+  ['DQs', 'closed'],
   ['Cancelled', 'closed'],
-  ['Removed', 'closed']
+  ['Removals', 'closed']
 ];
 
 const REPS = [

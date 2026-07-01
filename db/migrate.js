@@ -201,6 +201,60 @@ async function runMigrations() {
     WHERE pay_scale_id IS NULL
   `);
   if (payScaleBackfill.rowsAffected) console.log(`Migration: backfilled pay_scale_id for ${payScaleBackfill.rowsAffected} deal(s)`);
+
+  // Reorder and rename CRM statuses to match Joy's updated list. Existing statuses are
+  // renamed/reordered in-place (IDs preserved so no deals lose their status). Removed statuses
+  // are deactivated rather than deleted. New statuses are inserted only if absent.
+  // Sentinel: if 'PWRD SOW - Needed' already exists, this migration has already run.
+  const crmSentinel = await get(`SELECT id FROM deal_statuses WHERE label = 'PWRD SOW - Needed'`);
+  if (!crmSentinel) {
+    // Rename/reorder existing rows that are staying (matched by old label)
+    const renames = [
+      ['Site Scheduled',                         'Site Scheduled',                              0,  'pre_install'],
+      ['Live Inspection',                         'Live Inspection',                             1,  'pre_install'],
+      ['Awaiting SOW',                            'Awaiting SOW',                                2,  'pre_install'],
+      ['Results Received - Schedule Install',     'Results Received - Schedule Install',         4,  'pre_install'],
+      ['Pre-Install - Needs Attention',           'Pre-Installed - Needs Attention',             5,  'pre_install'],
+      ['SOW Approved - Pending Permits/HOA',      'SOW Approved - Pending Permits/HOA/MS/ETC',   6,  'pre_install'],
+      ['Roof Work Scheduled',                     'Roof Work Scheduled',                         7,  'pre_install'],
+      ['Roof Work Started',                       'Roof Work Started',                           8,  'pre_install'],
+      ['Roof Work Completed',                     'Roof Work Completed',                         9,  'pre_install'],
+      ['Solar Install Scheduled',                 'Solar Install Scheduled',                    10,  'pre_install'],
+      ['Solar Install Started',                   'Solar Install Started - Awaiting Completion', 11, 'pre_install'],
+      ['Post Install - Needs Attention',          'Post Install - Needs Attention',              12, 'pre_install'],
+      ['Install Complete - Awaiting Funding',     'Solar Install Complete - Awaiting Funding',   13, 'post_install'],
+      ['Job Completed - Troubleshoot',            'Job Completed - Troubleshoot',                16, 'post_install'],
+      ['Completed',                               'Completed',                                   17, 'closed'],
+      ['Cancelled',                               'Cancelled',                                   19, 'closed'],
+      ['Removed',                                 'Removals',                                    20, 'closed'],
+    ];
+    for (const [oldLabel, newLabel, order, phase] of renames) {
+      await run(
+        `UPDATE deal_statuses SET label = ?, sort_order = ?, phase = ? WHERE label = ?`,
+        [newLabel, order, phase, oldLabel]
+      );
+    }
+    // Deactivate statuses that no longer appear in the list (deals keep their reference, they
+    // just won't appear as selectable options in the dropdown going forward)
+    const toDeactivate = ['Post Inspection', 'M1 Approved', 'M1 Paid / Final Passed', 'PTO Approved', 'M2 Approved'];
+    for (const label of toDeactivate) {
+      await run(`UPDATE deal_statuses SET active = 0, sort_order = 999 WHERE label = ?`, [label]);
+    }
+    // Insert new statuses that have no old equivalent
+    const newStatuses = [
+      ['PWRD SOW - Needed',          3,  'pre_install'],
+      ['Commission Paid - Awaiting PTO', 14, 'post_install'],
+      ['Paid Out - Awaiting M2',     15, 'post_install'],
+      ['DQs',                        18, 'closed'],
+    ];
+    for (const [label, order, phase] of newStatuses) {
+      const existing = await get(`SELECT id FROM deal_statuses WHERE label = ?`, [label]);
+      if (!existing) {
+        await run(`INSERT INTO deal_statuses (label, phase, sort_order) VALUES (?, ?, ?)`, [label, phase, order]);
+      }
+    }
+    console.log('Migration: updated CRM status list to new set of 21 statuses');
+  }
 }
 
 module.exports = { runMigrations, columnExists };
