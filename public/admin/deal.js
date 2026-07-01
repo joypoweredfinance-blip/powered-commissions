@@ -314,16 +314,17 @@ function renderSystemFinance() {
       <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0 24px; align-items:start;">
         <div style="display:flex; flex-direction:column; gap:14px;">
           ${fdi('System Size', d.system_size_kw != null ? `${d.system_size_kw} kW` : '—')}
+          ${fdi('System Size (Watts)', d.system_size_kw != null ? `${(d.system_size_kw * 1000).toLocaleString('en-US')} W` : '—')}
           ${fdi('Annual Production', d.annual_production_kwh != null ? `${d.annual_production_kwh} kWh` : '—')}
           ${fdi('EPC Rate ($/W)', d.epc_rate_per_watt != null ? `$${parseFloat(d.epc_rate_per_watt).toFixed(2)}/W` : '—')}
-          ${fdi('Cashback', dm(d.cashback_amount || 0))}
           ${fdi('Pay Split', d.pay_split != null ? `${(d.pay_split * 100).toFixed(0)}%` : '—')}
+          ${fdi('Cashback', dm(d.cashback_amount || 0))}
         </div>
         <div style="display:flex; flex-direction:column; gap:14px;">
           ${fdi('Financier', financier ? dv(financier.name) : '—')}
           ${fdi('Contract Value', dm(d.contract_value))}
           ${fdi('Monthly Payment', dm(d.monthly_payment))}
-          ${fdi('Rate per kWh', d.rate_per_kwh != null ? parseFloat(d.rate_per_kwh).toFixed(3) : '—')}
+          ${fdi('Rate per kWh', d.rate_per_kwh != null ? `$${parseFloat(d.rate_per_kwh).toFixed(3)}` : '—')}
           ${fdi('Escalator', d.escalator_pct != null ? `${d.escalator_pct}%` : '—')}
         </div>
         <div style="display:flex; flex-direction:column; gap:14px;">
