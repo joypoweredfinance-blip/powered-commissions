@@ -47,9 +47,8 @@ function populateDropdownSelect(elId, category, currentValue) {
 }
 
 const FUNDING_STATUSES = [
-  'M1 Pending', 'M1 Approved - Awaiting Funding', 'M1 Rejected',
-  'M2 Pending', 'M2 Approved - Awaiting Funding', 'M2 Rejected Clawback',
-  'M1 Funded', 'M1+M2 Funded'
+  'Advance 1 Pending', 'Advance 2 Pending', 'M1 Funds Pending', 'M2 Funds Pending',
+  '100% Funded', 'Clawback'
 ];
 const ADDER_CATEGORY_LABELS = { mpu: 'MPU', battery: 'Battery', reroof_sow: 'Roof Costs', permit: 'Permit', misc: 'Miscellaneous', other: 'Other' };
 
@@ -104,7 +103,7 @@ async function saveSection(key) {
       funding_status_override: val('f_funding_status_override') || null,
       closer_rep_id: intval('f_closer_rep_id') || null,
       setter_rep_id: intval('f_setter_rep_id') || null,
-      date_signed: dateOrNull(val('f_date_signed')),
+      install_1_date: dateOrNull(val('f_install_1_date')),
       install_date: dateOrNull(val('f_install_date')),
       install_completed_date: dateOrNull(val('f_install_completed_date')),
       roof_date: dateOrNull(val('f_roof_date')),
@@ -113,6 +112,7 @@ async function saveSection(key) {
     data = {
       installer_id: intval('f_installer_id') || null,
       financier_id: intval('f_financier_id') || null,
+      date_signed: dateOrNull(val('f_date_signed')),
       module_type: val('f_module_type'),
       battery_type: val('f_battery_type'),
       num_batteries: intval('f_num_batteries'),
@@ -203,8 +203,8 @@ function renderProjectDetails() {
         <div><label>Setter (optional)</label><select id="f_setter_rep_id">${repOptions('setter', d.setter_rep_id)}</select></div>
       </div>
       <div class="field-row cols-3">
-        <div><label>Date Signed</label><input type="date" id="f_date_signed" value="${(d.date_signed || '').slice(0, 10)}"></div>
-        <div><label>Install Date</label><input type="date" id="f_install_date" value="${(d.install_date || '').slice(0, 10)}"></div>
+        <div><label>Install 1 Date</label><input type="date" id="f_install_1_date" value="${(d.install_1_date || '').slice(0, 10)}"></div>
+        <div><label>Install Completed Date</label><input type="date" id="f_install_date" value="${(d.install_date || '').slice(0, 10)}"></div>
         <div><label>Solar Date</label><input type="date" id="f_install_completed_date" value="${(d.install_completed_date || '').slice(0, 10)}"></div>
       </div>
       ${sectionSaveBtns('project')}
@@ -220,17 +220,17 @@ function renderProjectDetails() {
         <button class="btn secondary small" onclick="startEdit('project')" style="flex-shrink:0;">Edit</button>
       </div>
       <div class="fd-grid">
-        ${fdi('Customer Name', dv(d.customer_name))}
-        ${fdi('Customer Address', dv(d.customer_address))}
-        ${fdi('CRM Status', status ? dv(status.label) : '—')}
-        ${fdi('Roof Date', dd(d.roof_date))}
-        ${fdi('Funding Status', dv(effectiveFunding))}
-        ${d.funding_status_override ? fdi('Funding Status Override', dv(d.funding_status_override)) : ''}
+        <div class="fd-item" style="grid-column:span 2"><div class="fdl">Customer Name</div><div class="fdv">${dv(d.customer_name)}</div></div>
+        <div class="fd-item" style="grid-column:span 2"><div class="fdl">Customer Address</div><div class="fdv">${dv(d.customer_address)}</div></div>
         ${fdi('Closer', closer ? dv(closer.display_name || closer.full_name) : '—')}
         ${fdi('Setter', setter ? dv(setter.display_name || setter.full_name) : '— None —')}
-        ${fdi('Date Signed', dd(d.date_signed))}
-        ${fdi('Install Date', dd(d.install_date))}
         ${fdi('Solar Date', dd(d.install_completed_date))}
+        ${fdi('Roof Date', dd(d.roof_date))}
+        ${fdi('Install 1 Date', dd(d.install_1_date))}
+        ${fdi('Install Completed Date', dd(d.install_date))}
+        ${fdi('CRM Status', status ? dv(status.label) : '—')}
+        ${fdi('Funding Status', dv(effectiveFunding))}
+        ${d.funding_status_override ? `<div class="fd-item" style="grid-column:span 2"><div class="fdl">Funding Status Override</div><div class="fdv">${dv(d.funding_status_override)}</div></div>` : ''}
       </div>
     </div>`;
   }
@@ -242,9 +242,10 @@ function renderSystemFinance() {
   if (EDITING.has('finance')) {
     el.innerHTML = `<div class="card" style="margin-bottom:20px;">
       <p class="section-title">System &amp; Finance</p>
-      <div class="field-row">
+      <div class="field-row cols-3">
         <div><label>Installer</label><select id="f_installer_id">${selectOptions(META.installers, d.installer_id, '— Select —')}</select></div>
         <div><label>Financier</label><select id="f_financier_id">${selectOptions(META.financiers, d.financier_id, '— Select —')}</select></div>
+        <div><label>Contract Signed Date</label><input type="date" id="f_date_signed" value="${(d.date_signed || '').slice(0, 10)}"></div>
       </div>
       <div class="field-row cols-3">
         <div><label>Contract Value ($)</label><input type="number" step="0.01" id="f_contract_value" value="${d.contract_value ?? ''}"></div>
@@ -322,6 +323,7 @@ function renderSystemFinance() {
         </div>
         <div style="display:flex; flex-direction:column; gap:14px;">
           ${fdi('Financier', financier ? dv(financier.name) : '—')}
+          ${fdi('Contract Signed Date', dd(d.date_signed))}
           ${fdi('Contract Value', dm(d.contract_value))}
           ${fdi('Monthly Payment', dm(d.monthly_payment))}
           ${fdi('Rate per kWh', d.rate_per_kwh != null ? `$${parseFloat(d.rate_per_kwh).toFixed(3)}` : '—')}
@@ -749,25 +751,55 @@ function renderFundsReceived() {
   const d = DEAL;
   const editing = EDITING.has('funds');
   const el = document.getElementById('card-funds');
-  const totalReceived = (d.funds_received_m1 || 0) + (d.funds_received_m2 || 0);
+  const totalReceived = (d.adv1_received || 0) + (d.adv2_received || 0) + (d.funds_received_m1 || 0) + (d.funds_received_m2 || 0);
+  const totalExpected = (d.expected_adv1_amount ?? 500) + (d.expected_adv2_amount ?? 500) + (d.expected_m1_amount || 0) + (d.expected_m2_amount || 0);
+  const difference = totalExpected - totalReceived;
+
+  const thStyle = 'text-align:right; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--brand-muted); padding:0 0 8px 8px; border-bottom:1px solid var(--brand-border);';
+  const thStyleLeft = 'text-align:left; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--brand-muted); padding:0 8px 8px 0; border-bottom:1px solid var(--brand-border); width:36%;';
+  const cellBorder = 'border-bottom:1px solid var(--brand-border);';
 
   if (!editing) {
+    const rows = [
+      ['Advance 1', d.expected_adv1_amount ?? 500, d.adv1_received, d.adv1_received_date],
+      ['Advance 2', d.expected_adv2_amount ?? 500, d.adv2_received, d.adv2_received_date],
+      ['Milestone 1 (M1)', d.expected_m1_amount, d.funds_received_m1, d.funds_received_m1_date],
+      ['Milestone 2 (M2)', d.expected_m2_amount, d.funds_received_m2, d.funds_received_m2_date],
+    ];
     el.innerHTML = `<div class="card" style="margin-bottom:20px;">
       <div class="section-header">
         <p class="section-title">Funds Received <span style="font-weight:400; text-transform:none; font-size:12px;">— money POWERED actually receives</span></p>
         <button class="btn secondary small" onclick="startEdit('funds')" style="flex-shrink:0;">Edit</button>
       </div>
-      <div class="fd-grid">
-        ${fdi('Expected M1', dm(d.expected_m1_amount))}
-        ${fdi('Funds Pending M1', dm(d.funds_pending_m1))}
-        ${fdi('Received M1', dm(d.funds_received_m1))}
-        ${fdi('Date Received M1', dd(d.funds_received_m1_date))}
-        ${fdi('Expected M2', dm(d.expected_m2_amount))}
-        ${fdi('Funds Pending M2', dm(d.funds_pending_m2))}
-        ${fdi('Received M2', dm(d.funds_received_m2))}
-        ${fdi('Date Received M2', dd(d.funds_received_m2_date))}
-      </div>
-      <div class="calc-line total" style="margin-top:12px;"><span class="lbl">Total Received</span><span class="val">${fmtMoney(totalReceived)}</span></div>
+      <table style="width:100%; border-collapse:collapse; font-size:13px;">
+        <thead><tr>
+          <th style="${thStyleLeft}">Payment</th>
+          <th style="${thStyle} width:20%;">Expected</th>
+          <th style="${thStyle} width:20%;">Received</th>
+          <th style="${thStyle} width:24%;">Date received</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(([label, exp, rec, date]) => `<tr>
+            <td style="padding:7px 8px 7px 0; color:var(--brand-muted); ${cellBorder}">${label}</td>
+            <td style="padding:7px 8px; text-align:right; ${cellBorder}">${exp != null ? fmtMoney(exp) : '—'}</td>
+            <td style="padding:7px 8px; text-align:right; ${cellBorder} ${rec ? 'color:#1D9E75; font-weight:600;' : 'color:var(--brand-muted);'}">${rec != null ? fmtMoney(rec) : '—'}</td>
+            <td style="padding:7px 0 7px 8px; text-align:right; font-size:12px; color:${date ? 'var(--brand-text)' : 'var(--brand-muted)'}; ${cellBorder}">${date ? fmtDate(date.slice(0, 10)) : 'Pending'}</td>
+          </tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td style="padding:8px 8px 2px 0; font-weight:600; border-top:2px solid var(--brand-border);">Total</td>
+            <td style="padding:8px 8px 2px; text-align:right; font-weight:600; border-top:2px solid var(--brand-border);">${fmtMoney(totalExpected)}</td>
+            <td style="padding:8px 8px 2px; text-align:right; font-weight:600; color:#1D9E75; border-top:2px solid var(--brand-border);">${fmtMoney(totalReceived)}</td>
+            <td style="border-top:2px solid var(--brand-border);"></td>
+          </tr>
+          ${difference !== 0 ? `<tr>
+            <td></td><td></td>
+            <td colspan="2" style="text-align:right; font-size:12px; color:var(--brand-muted); padding:2px 0 8px;">${difference > 0 ? '−' : '+'} ${fmtMoney(Math.abs(difference))}</td>
+          </tr>` : ''}
+        </tfoot>
+      </table>
+      ${d.funds_received_notes ? `<div style="margin-top:10px; padding:8px 10px; background:var(--brand-bg); border-radius:8px; border:1px solid var(--brand-border);"><div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--brand-muted); margin-bottom:3px;">Notes</div><div style="font-size:13px; color:var(--brand-text); white-space:pre-wrap;">${d.funds_received_notes.replace(/</g, '&lt;')}</div></div>` : ''}
     </div>`;
     return;
   }
@@ -777,6 +809,22 @@ function renderFundsReceived() {
 
   el.innerHTML = `<div class="card" style="margin-bottom:20px;">
     <p class="section-title">Funds Received <span style="font-weight:400; text-transform:none; font-size:12px;">— money POWERED actually receives</span></p>
+
+    <p style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--brand-muted); margin:0 0 6px;">Advance 1</p>
+    <div class="field-row" style="margin-bottom:14px;">
+      <div><label>Expected ($)</label><input type="number" step="0.01" id="f_exp_adv1" value="${d.expected_adv1_amount ?? 500}"></div>
+      <div><label>Received ($)</label><input type="number" step="0.01" id="fr_adv1_amount" value="${d.adv1_received ?? ''}"></div>
+      <div><label>Date Received</label><input type="date" id="fr_adv1_date" value="${(d.adv1_received_date || '').slice(0, 10)}"></div>
+    </div>
+
+    <p style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--brand-muted); margin:0 0 6px;">Advance 2</p>
+    <div class="field-row" style="margin-bottom:14px;">
+      <div><label>Expected ($)</label><input type="number" step="0.01" id="f_exp_adv2" value="${d.expected_adv2_amount ?? 500}"></div>
+      <div><label>Received ($)</label><input type="number" step="0.01" id="fr_adv2_amount" value="${d.adv2_received ?? ''}"></div>
+      <div><label>Date Received</label><input type="date" id="fr_adv2_date" value="${(d.adv2_received_date || '').slice(0, 10)}"></div>
+    </div>
+
+    <p style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--brand-muted); margin:0 0 6px;">Milestone 1 (M1)</p>
     <div style="margin-bottom:6px;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <span class="lbl" style="color:var(--brand-muted);">Expected M1</span>
@@ -788,10 +836,11 @@ function renderFundsReceived() {
       ${overrideReasonM1 ? `<div style="font-size:11px; color:var(--brand-muted); margin-top:2px;">Override reason: ${overrideReasonM1}</div>` : ''}
     </div>
     <div class="field-row" style="margin:6px 0 14px;">
-      <div><label>Funds Pending M1 ($)</label><input type="number" step="0.01" id="fp_m1_amount" value="${d.funds_pending_m1 ?? ''}"></div>
       <div><label>Received M1 ($)</label><input type="number" step="0.01" id="fr_m1_amount" value="${d.funds_received_m1 ?? ''}"></div>
       <div><label>Date Received</label><input type="date" id="fr_m1_date" value="${(d.funds_received_m1_date || '').slice(0, 10)}"></div>
     </div>
+
+    <p style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--brand-muted); margin:0 0 6px;">Milestone 2 (M2)</p>
     <div style="margin-bottom:6px;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <span class="lbl" style="color:var(--brand-muted);">Expected M2</span>
@@ -803,12 +852,16 @@ function renderFundsReceived() {
       ${overrideReasonM2 ? `<div style="font-size:11px; color:var(--brand-muted); margin-top:2px;">Override reason: ${overrideReasonM2}</div>` : ''}
     </div>
     <div class="field-row" style="margin:6px 0 14px;">
-      <div><label>Funds Pending M2 ($)</label><input type="number" step="0.01" id="fp_m2_amount" value="${d.funds_pending_m2 ?? ''}"></div>
       <div><label>Received M2 ($)</label><input type="number" step="0.01" id="fr_m2_amount" value="${d.funds_received_m2 ?? ''}"></div>
       <div><label>Date Received</label><input type="date" id="fr_m2_date" value="${(d.funds_received_m2_date || '').slice(0, 10)}"></div>
     </div>
-    <div class="calc-line total"><span class="lbl">Total Received</span><span class="val">${fmtMoney(totalReceived)}</span></div>
-    <div style="display:flex; gap:8px; margin-top:12px;">
+
+    <div style="margin-bottom:12px;">
+      <label style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--brand-muted); display:block; margin-bottom:6px;">Notes</label>
+      <textarea id="f_funds_notes" style="width:100%; box-sizing:border-box; padding:8px 10px; font-size:13px; font-family:inherit; color:var(--brand-text); background:var(--brand-card); border:1px solid var(--brand-border); border-radius:8px; resize:vertical; min-height:60px;">${(d.funds_received_notes || '').replace(/</g, '&lt;')}</textarea>
+    </div>
+
+    <div style="display:flex; gap:8px; margin-top:4px;">
       <button class="btn small" id="saveFundsBtn" style="width:auto;">Save</button>
       <button class="btn secondary small" onclick="cancelEdit('funds')" style="width:auto;">Cancel</button>
     </div>
@@ -818,9 +871,17 @@ function renderFundsReceived() {
     const btn = e.target; btn.disabled = true; btn.textContent = 'Saving…';
     try {
       DEAL = await api('PUT', `/api/deals/${dealId}`, {
-        funds_pending_m1: numOrNull(val('fp_m1_amount')), funds_pending_m2: numOrNull(val('fp_m2_amount')),
-        funds_received_m1: numOrNull(val('fr_m1_amount')), funds_received_m1_date: val('fr_m1_date') || null,
-        funds_received_m2: numOrNull(val('fr_m2_amount')), funds_received_m2_date: val('fr_m2_date') || null
+        expected_adv1_amount: numOrNull(val('f_exp_adv1')),
+        expected_adv2_amount: numOrNull(val('f_exp_adv2')),
+        adv1_received: numOrNull(val('fr_adv1_amount')),
+        adv1_received_date: val('fr_adv1_date') || null,
+        adv2_received: numOrNull(val('fr_adv2_amount')),
+        adv2_received_date: val('fr_adv2_date') || null,
+        funds_received_m1: numOrNull(val('fr_m1_amount')),
+        funds_received_m1_date: val('fr_m1_date') || null,
+        funds_received_m2: numOrNull(val('fr_m2_amount')),
+        funds_received_m2_date: val('fr_m2_date') || null,
+        funds_received_notes: val('f_funds_notes') || null,
       });
       EDITING.delete('funds');
       renderFundsReceived();

@@ -70,7 +70,15 @@ const COLUMN_MIGRATIONS = [
   { table: 'deals', column: 'setter_calc_rep_pool', definition: 'REAL' },
   { table: 'deals', column: 'setter_calc_below_floor', definition: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'deals', column: 'pay_scale_id', definition: 'INTEGER REFERENCES pay_scales(id)' },
-  { table: 'deals', column: 'payment_na_flags', definition: "TEXT NOT NULL DEFAULT '{}'" }
+  { table: 'deals', column: 'payment_na_flags', definition: "TEXT NOT NULL DEFAULT '{}'" },
+  { table: 'deals', column: 'install_1_date', definition: 'TEXT' },
+  { table: 'deals', column: 'expected_adv1_amount', definition: 'REAL' },
+  { table: 'deals', column: 'expected_adv2_amount', definition: 'REAL' },
+  { table: 'deals', column: 'adv1_received', definition: 'REAL' },
+  { table: 'deals', column: 'adv1_received_date', definition: 'TEXT' },
+  { table: 'deals', column: 'adv2_received', definition: 'REAL' },
+  { table: 'deals', column: 'adv2_received_date', definition: 'TEXT' },
+  { table: 'deals', column: 'funds_received_notes', definition: 'TEXT' }
 ];
 
 async function columnExists(table, column) {

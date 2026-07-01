@@ -24,9 +24,8 @@ const ADDER_CATEGORY_LABELS = { mpu: 'MPU', battery: 'Battery', reroof_sow: 'Roo
 
 // Fixed, closed list — separate from the flexible CRM status list pulled from /api/meta.
 const FUNDING_STATUSES = [
-  'M1 Pending', 'M1 Approved - Awaiting Funding', 'M1 Rejected',
-  'M2 Pending', 'M2 Approved - Awaiting Funding', 'M2 Rejected Clawback',
-  'M1 Funded', 'M1+M2 Funded'
+  'Advance 1 Pending', 'Advance 2 Pending', 'M1 Funds Pending', 'M2 Funds Pending',
+  '100% Funded', 'Clawback'
 ];
 
 document.getElementById('pageContent').innerHTML = `

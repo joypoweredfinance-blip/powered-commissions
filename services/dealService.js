@@ -29,9 +29,11 @@ const EDITABLE_FIELDS = [
   'install_completed_date', 'ntp_approved_date', 'm1_approved_date', 'm1_paid_date', 'pto_granted_date',
   'm2_approved_date', 'm2_paid_date', 'admin_notes', 'field_override_reasons',
   'funds_received_m1', 'funds_received_m1_date', 'funds_received_m2', 'funds_received_m2_date',
-  // Funds Pending is Joy's own manual call, not derived from Expected minus Received — installer
-  // funding quirks mean that subtraction doesn't always reflect what's actually still owed.
   'funds_pending_m1', 'funds_pending_m2',
+  'expected_adv1_amount', 'expected_adv2_amount',
+  'adv1_received', 'adv1_received_date', 'adv2_received', 'adv2_received_date',
+  'funds_received_notes',
+  'install_1_date',
   'funding_status', 'funding_status_override',
   // A reference number only — deliberately not in COMPUTED_FIELDS, never touched by
   // recalculate() or any override logic, so it can never affect another figure on the deal.
