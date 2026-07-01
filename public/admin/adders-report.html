@@ -6,6 +6,7 @@
 <title>Adders Report — POWERED Commissions</title>
 <link rel="stylesheet" href="/shared/brand.css">
 <link rel="stylesheet" href="/admin/admin.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <script src="/admin/admin-common.js"></script>
@@ -55,6 +56,11 @@ document.getElementById('pageContent').innerHTML = `
     <select id="repFilter"><option value="">All reps</option></select>
     <select id="installerFilter"><option value="">All installers</option></select>
     <button class="btn secondary small" id="exportCsvBtn" style="width:auto; margin-left:auto;">Export CSV</button>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
+    <p class="section-title" style="margin-bottom:12px;">Misc vs Total Adders by Installer</p>
+    <div style="height:220px; position:relative;"><canvas id="installerChart"></canvas></div>
   </div>
 
   <div class="card" style="overflow-x:auto;">
@@ -207,6 +213,50 @@ async function loadReport() {
       <td>${fmtMoney(grandTotalAdders)}</td>
     </tr>
   `;
+  renderInstallerChart();
+}
+
+let installerChartInst = null;
+function renderInstallerChart() {
+  const canvas = document.getElementById('installerChart');
+  if (!canvas) return;
+  if (!LAST_REPORT || !LAST_REPORT.rows.length) {
+    if (installerChartInst) { installerChartInst.destroy(); installerChartInst = null; }
+    return;
+  }
+  const categoryCols = Object.keys(FIXED_CATEGORY_LABELS);
+  const byInstaller = {};
+  for (const row of LAST_REPORT.rows) {
+    const key = row.installerName || 'None';
+    if (!byInstaller[key]) byInstaller[key] = { misc: 0, total: 0 };
+    const totalAdders = categoryCols.reduce((s, c) => s + (row.categoryTotals[c] || 0), 0) + (row.miscTotal || 0);
+    byInstaller[key].misc += (row.miscTotal || 0);
+    byInstaller[key].total += totalAdders;
+  }
+  const labels = Object.keys(byInstaller).sort((a, b) => {
+    if (a === 'Pacific') return -1;
+    if (b === 'Pacific') return 1;
+    return a.localeCompare(b);
+  });
+  if (installerChartInst) installerChartInst.destroy();
+  installerChartInst = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Misc Total',    data: labels.map(k => byInstaller[k].misc),  backgroundColor: 'rgba(107,63,212,0.75)', borderRadius: 4 },
+        { label: 'Total Adders',  data: labels.map(k => byInstaller[k].total), backgroundColor: 'rgba(27,94,69,0.75)',   borderRadius: 4 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top', labels: { font: { size: 12 } } } },
+      scales: {
+        y: { ticks: { callback: (v) => '$' + v.toLocaleString(), font: { size: 11 } }, grid: { color: '#E7E4F0' } },
+        x: { ticks: { font: { size: 12 } }, grid: { display: false } }
+      }
+    }
+  });
 }
 
 document.getElementById('searchInput').addEventListener('input', () => { clearTimeout(window._t); window._t = setTimeout(loadReport, 250); });
