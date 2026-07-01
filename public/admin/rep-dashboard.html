@@ -26,6 +26,9 @@ async function load() {
   const d = await api('GET', `/api/dashboard/rep/${repId}`);
   document.querySelector('.topbar h1').textContent = `${d.rep.full_name}'s Dashboard`;
   document.getElementById('pageContent').innerHTML = `
+    <div style="display:flex; justify-content:flex-end; margin-bottom:12px;" class="no-print">
+      <button class="btn secondary small" onclick="window.print()">⬇ Export PDF</button>
+    </div>
     <div class="kpi-grid" id="kpiGrid"></div>
     <div class="card" style="margin-bottom:20px;">
       <p class="section-title">Commission Paid — Last 6 Months</p>
