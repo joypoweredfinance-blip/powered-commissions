@@ -22,11 +22,13 @@ function fmtPct(n) { return (n === null || n === undefined || n === '') ? '—' 
 // Classification totals only — "Other" and "Permit" fold into Miscellaneous server-side,
 // never shown to reps.
 function renderAdderTotals(totals) {
+  const total = (totals.mpu || 0) + (totals.battery || 0) + (totals.reroof_sow || 0) + (totals.misc || 0);
   return `
     <div class="detail-row"><span class="lbl">MPU</span><span class="val">${fmtMoney(totals.mpu)}</span></div>
     <div class="detail-row"><span class="lbl">Battery</span><span class="val">${fmtMoney(totals.battery)}</span></div>
+    <div class="detail-row"><span class="lbl">Roofing</span><span class="val">${fmtMoney(totals.reroof_sow)}</span></div>
     <div class="detail-row"><span class="lbl">Miscellaneous</span><span class="val">${fmtMoney(totals.misc)}</span></div>
-    <div class="detail-row" style="font-weight:700; border-top:2px solid var(--brand-ink); margin-top:4px;"><span class="lbl">Roofing Total</span><span class="val">${fmtMoney(totals.reroof_sow)}</span></div>
+    <div class="detail-row" style="font-weight:700; border-top:2px solid var(--brand-ink); margin-top:4px;"><span class="lbl">Total Adders</span><span class="val">${fmtMoney(total)}</span></div>
   `;
 }
 
