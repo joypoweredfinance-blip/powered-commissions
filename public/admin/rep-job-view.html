@@ -40,7 +40,7 @@ async function load() {
     document.getElementById('pageContent').innerHTML = `<p style="text-align:center; color:var(--brand-muted); margin-top:40px;">${e.message}</p><a href="/admin/rep-dashboard.html?id=${repId}" style="display:block; text-align:center; margin-top:10px;">← Back to Rep's Dashboard</a>`;
     return;
   }
-  document.querySelector('.topbar h1').textContent = `${j.rep.full_name}'s View (Read-Only)`;
+  document.querySelector('.topbar h1').innerHTML = `${j.rep.full_name}'s View <span class="no-print">(Read-Only)</span>`;
   const isCloser = j.viewRole === 'closer';
   document.getElementById('pageContent').innerHTML = `
     <div style="max-width:600px;">
@@ -98,7 +98,7 @@ async function load() {
         <div class="detail-row"><span class="lbl">Status</span><span class="val">${j.paid ? `✅ Paid ${fmtDate(j.paidDate)}` : '⏳ Not yet paid'}</span></div>
       </div>
 
-      <a href="/admin/rep-dashboard.html?id=${repId}" style="display:inline-block; margin-top:6px;">← Back to ${j.rep.display_name || j.rep.full_name}'s Dashboard</a>
+      <a href="/admin/rep-dashboard.html?id=${repId}" class="no-print" style="display:inline-block; margin-top:6px;">← Back to ${j.rep.display_name || j.rep.full_name}'s Dashboard</a>
     </div>
   `;
 }
