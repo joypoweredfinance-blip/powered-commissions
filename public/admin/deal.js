@@ -987,16 +987,21 @@ function renderPayment() {
     </div>`;
   }
 
+  function labelCell(name, amount) {
+    return `<div style="display:flex; flex-direction:column; gap:1px;">
+      <span style="font-size:13px; font-weight:600;">${name}</span>
+      ${amount != null ? `<span style="font-size:12px; color:var(--brand-muted);">${dm(amount)}</span>` : ''}
+    </div>`;
+  }
+
   function payRow(label, recipient, paid, amount, paidDate) {
-    const amtStr = amount != null ? ` — ${dm(amount)}` : '';
-    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--brand-border); flex-wrap:wrap; gap:6px;">
-      <span style="font-size:13px; font-weight:600;">${label}${amtStr}</span>
+    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--brand-border); gap:8px;">
+      ${labelCell(label, amount)}
       ${editing ? statusSelect(recipient, paid, paidDate) : statusBadge(recipient, paid, paidDate)}
     </div>`;
   }
 
   function internalRow(label, recipient, paid, amount, paidDate, overrideField, reason) {
-    const amtStr = amount != null ? ` — ${dm(amount)}` : '';
     const overrideHtml = editing
       ? `<div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
            <input type="number" step="0.01" class="amount-override" data-field="${overrideField}" value="${amount ?? ''}" style="margin:0; max-width:140px;">
@@ -1004,9 +1009,9 @@ function renderPayment() {
          </div>
          ${reason ? `<div style="font-size:11px; color:var(--brand-muted); margin-top:2px;">Override reason: ${reason}</div>` : ''}`
       : '';
-    return `<div style="padding:7px 0; border-bottom:1px solid var(--brand-border);">
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
-        <span style="font-size:13px; font-weight:600;">${label}${amtStr}</span>
+    return `<div style="padding:8px 0 8px 14px; border-bottom:1px solid var(--brand-border);">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        ${labelCell(label, amount)}
         ${editing ? statusSelect(recipient, paid, paidDate) : statusBadge(recipient, paid, paidDate)}
       </div>
       ${overrideHtml}
@@ -1023,7 +1028,10 @@ function renderPayment() {
 
   if (d.closer_rep_id) html += payRow('Closer', 'closer', d.closer_paid, d.closer_pay_net, d.closer_paid_date);
   if (d.setter_rep_id) html += payRow('Setter', 'setter', d.setter_paid, d.setter_pay, d.setter_paid_date);
-  html += `<p style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--brand-muted); margin:14px 0 4px;">Internal Payroll <span style="font-weight:400; text-transform:none; font-size:11px;">(admin only)${editing ? ' — save each row to override amount' : ''}</span></p>`;
+  html += `<div style="margin:12px 0 2px; padding-bottom:4px; border-bottom:1px solid var(--brand-border);">
+    <span style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--brand-muted);">Internal Payroll</span>
+    <span style="font-size:11px; color:var(--brand-muted);"> — admin only${editing ? ', save each row to override amount' : ''}</span>
+  </div>`;
   html += internalRow('Etai — M1', 'owner_etai_m1', d.owner_etai_m1_paid, d.owner_etai_m1_amount, d.owner_etai_m1_paid_date, 'owner_etai_m1_amount', fieldOverrideReason(d, 'owner_etai_m1_amount'));
   html += internalRow('Etai — M2', 'owner_etai_m2', d.owner_etai_m2_paid, d.owner_etai_m2_amount, d.owner_etai_m2_paid_date, 'owner_etai_m2_amount', fieldOverrideReason(d, 'owner_etai_m2_amount'));
   html += internalRow('Noy — M1', 'owner_noy_m1', d.owner_noy_m1_paid, d.owner_noy_m1_amount, d.owner_noy_m1_paid_date, 'owner_noy_m1_amount', fieldOverrideReason(d, 'owner_noy_m1_amount'));
