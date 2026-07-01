@@ -1220,12 +1220,23 @@ function wireSetterOverrideForm() {
 // --- Main page rendering ---
 
 async function getCachedMeta() {
-  const KEY = 'powered_meta_cache', TTL = 30000;
+  const KEY = 'powered_meta_cache', TTL = 5 * 60 * 1000;
   try {
     const cached = JSON.parse(sessionStorage.getItem(KEY) || 'null');
     if (cached && Date.now() - cached.ts < TTL) return cached.data;
-  } catch (e) { /* ignore parse errors */ }
+  } catch (e) {}
   const data = await api('GET', '/api/meta');
+  try { sessionStorage.setItem(KEY, JSON.stringify({ ts: Date.now(), data })); } catch (e) {}
+  return data;
+}
+
+async function getCachedSettings() {
+  const KEY = 'powered_settings_cache', TTL = 5 * 60 * 1000;
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(KEY) || 'null');
+    if (cached && Date.now() - cached.ts < TTL) return cached.data;
+  } catch (e) {}
+  const data = await api('GET', '/api/settings');
   try { sessionStorage.setItem(KEY, JSON.stringify({ ts: Date.now(), data })); } catch (e) {}
   return data;
 }
@@ -1235,7 +1246,7 @@ async function init() {
     const [metaResp, dealResp, settingsResp] = await Promise.all([
       getCachedMeta(),
       api('GET', `/api/deals/${dealId}`),
-      api('GET', '/api/settings')
+      getCachedSettings()
     ]);
     META = metaResp; DEAL = dealResp; SETTINGS = settingsResp.commissionSettings;
     renderFull();

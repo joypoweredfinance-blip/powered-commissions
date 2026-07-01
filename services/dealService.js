@@ -1,4 +1,4 @@
-const { run, get, all } = require('../db/client');
+const { run, get, all, batchAll } = require('../db/client');
 const {
   calculateRepCommission, calculateSetterPreliminaryPay, calculateOwnerDistribution, calculateJoeyBonus,
   computeEpcCost, computeGross, computeExpectedFunding, sumAllAdders, round2
@@ -129,8 +129,11 @@ async function getDeal(id) {
   // roughly the time of the single slowest one. This runs on every deal-page load and every
   // mutation (override, recalculate, approve, etc., which all call getDeal() to return the
   // fresh state), so it's worth keeping fast.
-  const [deal, adders, advances, clawbacks, auditLogEntries, fileRows, adderFileRows] = await Promise.all([
-    get(`
+  // All 7 queries sent to Turso in a single HTTP round-trip via client.batch('read').
+  // Previously Promise.all fired 7 separate execute() calls; even in parallel each still
+  // requires its own request/response. One batch = one round-trip regardless of query count.
+  const [dealRows, addersRows, advancesRows, clawbacksRows, auditRows, fileRows, adderFileRows] = await batchAll([
+    { sql: `
       SELECT d.*, cr.full_name as closer_name, cr.display_name as closer_display, cr.pay_scale_id as closer_pay_scale_id,
              sr.full_name as setter_name, sr.display_name as setter_display,
              ds.label as status_label, ds.phase as status_phase,
@@ -141,27 +144,21 @@ async function getDeal(id) {
       LEFT JOIN deal_statuses ds ON ds.id = d.status_id
       LEFT JOIN installers inst ON inst.id = d.installer_id
       LEFT JOIN financiers fin ON fin.id = d.financier_id
-      WHERE d.id = ?
-    `, [id]),
-    all(`SELECT * FROM deal_adders WHERE deal_id = ? ORDER BY sort_order ASC, id ASC`, [id]),
-    all(`SELECT a.*, r.full_name as rep_name FROM advances a LEFT JOIN reps r ON r.id = a.rep_id WHERE a.deal_id = ?`, [id]),
-    all(`SELECT c.*, r.full_name as rep_name FROM clawbacks c LEFT JOIN reps r ON r.id = c.rep_id WHERE c.deal_id = ?`, [id]),
-    // Attached here (not just on the dedicated GET /:id route) so every mutation — override,
-    // recalculate, payment, approve, adders — returns the full audit history too. Every one of
-    // those calls getDeal() and hands its result straight back to the frontend, which replaces
-    // its local DEAL object wholesale; if auditLog wasn't on it, the page's history list would
-    // go blank on every single action even though the rows were never touched in the database.
-    auditLog.getLogFor('deals', id, { limit: 50 }),
-    // Metadata only — file_data (the actual bytes) is deliberately excluded here and only ever
-    // fetched by the dedicated download route, so attaching a large file never slows down every
-    // load of this deal (or, on listDeals, every deal on the whole Board). At most one row per
-    // slot, so this is at most 2 rows total.
-    all(`SELECT slot, id, file_name, file_type, file_size, uploaded_at FROM deal_estimate_files WHERE deal_id = ?`, [id]),
-    // Receipt/Proof metadata — joined through deal_adders so this can fire in the same parallel
-    // batch as the adders query itself, removing the previously sequential second round-trip.
-    all(`SELECT daf.adder_id, daf.id, daf.file_name, daf.file_type, daf.file_size, daf.uploaded_at
-         FROM deal_adder_files daf JOIN deal_adders da ON da.id = daf.adder_id WHERE da.deal_id = ?`, [id])
+      WHERE d.id = ?`, args: [id] },
+    { sql: `SELECT * FROM deal_adders WHERE deal_id = ? ORDER BY sort_order ASC, id ASC`, args: [id] },
+    { sql: `SELECT a.*, r.full_name as rep_name FROM advances a LEFT JOIN reps r ON r.id = a.rep_id WHERE a.deal_id = ?`, args: [id] },
+    { sql: `SELECT c.*, r.full_name as rep_name FROM clawbacks c LEFT JOIN reps r ON r.id = c.rep_id WHERE c.deal_id = ?`, args: [id] },
+    { sql: `SELECT a.*, u.email as changed_by_email FROM audit_log a LEFT JOIN users u ON u.id = a.changed_by
+            WHERE a.table_name = 'deals' AND a.record_id = ? ORDER BY a.changed_at DESC LIMIT 50`, args: [id] },
+    { sql: `SELECT slot, id, file_name, file_type, file_size, uploaded_at FROM deal_estimate_files WHERE deal_id = ?`, args: [id] },
+    { sql: `SELECT daf.adder_id, daf.id, daf.file_name, daf.file_type, daf.file_size, daf.uploaded_at
+            FROM deal_adder_files daf JOIN deal_adders da ON da.id = daf.adder_id WHERE da.deal_id = ?`, args: [id] }
   ]);
+  const deal = dealRows[0] || null;
+  const adders = addersRows;
+  const advances = advancesRows;
+  const clawbacks = clawbacksRows;
+  const auditLogEntries = auditRows;
   if (!deal) return null;
   const fileByAdderId = {};
   adderFileRows.forEach((row) => { fileByAdderId[row.adder_id] = row; });

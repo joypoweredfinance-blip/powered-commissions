@@ -3,8 +3,16 @@ const router = express.Router();
 const { run, get, all } = require('../db/client');
 const auditLog = require('../services/auditLog');
 
+let _settingsCache = null;
+let _settingsCacheTs = 0;
+const SETTINGS_TTL = 5 * 60 * 1000;
+function invalidateSettingsCache() { _settingsCache = null; }
+
 router.get('/', async (req, res) => {
   try {
+    if (_settingsCache && Date.now() - _settingsCacheTs < SETTINGS_TTL) {
+      return res.json(_settingsCache);
+    }
     const [commissionSettings, scales, allTiers] = await Promise.all([
       get(`SELECT * FROM commission_settings WHERE id = 1`),
       all(`SELECT * FROM pay_scales ORDER BY name`),
@@ -13,7 +21,9 @@ router.get('/', async (req, res) => {
     for (const scale of scales) {
       scale.tiers = allTiers.filter((t) => t.pay_scale_id === scale.id);
     }
-    res.json({ commissionSettings, payScales: scales });
+    _settingsCache = { commissionSettings, payScales: scales };
+    _settingsCacheTs = Date.now();
+    res.json(_settingsCache);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -31,6 +41,7 @@ router.put('/commission', async (req, res) => {
       await run(`UPDATE commission_settings SET ${setClause} WHERE id = 1`, fields.map((f) => req.body[f]));
       await auditLog.logDiff('commission_settings', 1, old, req.body, req.user.id);
     }
+    invalidateSettingsCache();
     res.json(await get(`SELECT * FROM commission_settings WHERE id = 1`));
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
@@ -43,6 +54,7 @@ router.put('/pay-scales/:id', async (req, res) => {
     const setClause = fields.map((f) => `${f} = ?`).join(', ');
     await run(`UPDATE pay_scales SET ${setClause} WHERE id = ?`, [...fields.map((f) => req.body[f]), req.params.id]);
     await auditLog.logDiff('pay_scales', req.params.id, old, req.body, req.user.id);
+    invalidateSettingsCache();
     res.json(await get(`SELECT * FROM pay_scales WHERE id = ?`, [req.params.id]));
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
@@ -59,6 +71,7 @@ router.post('/pay-scales/:id/tiers', async (req, res) => {
       [req.params.id, net_ppw_threshold, dollar_per_kw, (maxOrder.m ?? -1) + 1]
     );
     await auditLog.logChange('pay_scale_tiers', req.params.id, '_tier_added', null, `${net_ppw_threshold} -> $${dollar_per_kw}`, req.user.id);
+    invalidateSettingsCache();
     res.status(201).json(await get(`SELECT * FROM pay_scale_tiers WHERE id = ?`, [Number(result.lastInsertRowid)]));
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
@@ -71,6 +84,7 @@ router.put('/tiers/:tierId', async (req, res) => {
     const setClause = fields.map((f) => `${f} = ?`).join(', ');
     await run(`UPDATE pay_scale_tiers SET ${setClause} WHERE id = ?`, [...fields.map((f) => req.body[f]), req.params.tierId]);
     await auditLog.logDiff('pay_scale_tiers', req.params.tierId, old, req.body, req.user.id);
+    invalidateSettingsCache();
     res.json(await get(`SELECT * FROM pay_scale_tiers WHERE id = ?`, [req.params.tierId]));
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
@@ -80,6 +94,7 @@ router.delete('/tiers/:tierId', async (req, res) => {
     const old = await get(`SELECT * FROM pay_scale_tiers WHERE id = ?`, [req.params.tierId]);
     await run(`DELETE FROM pay_scale_tiers WHERE id = ?`, [req.params.tierId]);
     await auditLog.logChange('pay_scale_tiers', req.params.tierId, '_tier_removed', old ? `${old.net_ppw_threshold} -> $${old.dollar_per_kw}` : null, null, req.user.id);
+    invalidateSettingsCache();
     res.json({ ok: true });
   } catch (err) { res.status(400).json({ error: err.message }); }
 });

@@ -27,4 +27,15 @@ async function batchRun(statements) {
   return client.batch(statements.map((sql) => ({ sql, args: [] })), 'write');
 }
 
-module.exports = { client, run, get, all, batchRun };
+// Executes multiple independent SELECT statements in one Turso round-trip.
+// Returns an array of row arrays (one per statement), all read in a consistent snapshot.
+// Use instead of Promise.all([all(...), all(...)]) to halve network round-trips.
+async function batchAll(statements) {
+  const results = await client.batch(
+    statements.map(({ sql, args }) => ({ sql, args: args || [] })),
+    'read'
+  );
+  return results.map((r) => r.rows);
+}
+
+module.exports = { client, run, get, all, batchRun, batchAll };

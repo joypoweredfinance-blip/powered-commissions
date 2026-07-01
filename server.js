@@ -80,6 +80,10 @@ async function start() {
   app.listen(PORT, () => {
     console.log(`\nPOWERED Commissions running at http://localhost:${PORT}\n`);
   });
+  // Keep the Turso connection alive. Without this, the WebSocket connection drops after
+  // ~5 minutes of idle and the next request pays a multi-second reconnect penalty.
+  const { get: dbPing } = require('./db/client');
+  setInterval(() => { dbPing('SELECT 1').catch(() => {}); }, 4 * 60 * 1000);
 }
 
 start().catch((err) => {
