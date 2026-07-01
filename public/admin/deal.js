@@ -441,39 +441,49 @@ function renderAdders() {
   const sectionEditing = EDITING.has('adders');
   const catOptions = (a) => Object.entries(ADDER_CATEGORY_LABELS).map(([c, label]) => `<option value="${c}" ${c === a.category ? 'selected' : ''}>${label}</option>`).join('');
 
+  // Category display order for grouping
+  const CAT_ORDER = ['mpu', 'battery', 'reroof_sow', 'permit', 'misc', 'other'];
+
   let addersHtml;
   if (!DEAL.adders.length) {
     addersHtml = `<p style="color:var(--brand-muted); font-size:13px;">No line items yet — add MPU, battery, re-roof, permits, etc.</p>`;
+  } else if (sectionEditing) {
+    addersHtml = DEAL.adders.map((a) => `
+      <div class="adder-row" data-id="${a.id}">
+        <input type="text" class="a-label" value="${(a.label || '').replace(/"/g, '&quot;')}" placeholder="Label">
+        <select class="a-category">${catOptions(a)}</select>
+        <input type="number" step="0.01" class="a-amount" value="${a.amount}">
+        <label style="display:flex; align-items:center; gap:4px; font-size:12px; white-space:nowrap;">
+          <input type="checkbox" class="a-hardcost" ${a.counts_as_hard_cost ? 'checked' : ''} style="width:auto;">Counts toward PPW
+        </label>
+        <button class="btn small a-save-btn" data-id="${a.id}" style="width:auto;">Save</button>
+        <button class="icon-btn a-delete" data-id="${a.id}" title="Remove">✕</button>
+      </div>
+      ${receiptRowHtml(a)}`).join('');
   } else {
-    addersHtml = DEAL.adders.map((a) => {
-      if (sectionEditing) {
-        return `
-          <div class="adder-row" data-id="${a.id}">
-            <input type="text" class="a-label" value="${(a.label || '').replace(/"/g, '&quot;')}" placeholder="Label">
-            <select class="a-category">${catOptions(a)}</select>
-            <input type="number" step="0.01" class="a-amount" value="${a.amount}">
-            <label style="display:flex; align-items:center; gap:4px; font-size:12px; white-space:nowrap;">
-              <input type="checkbox" class="a-hardcost" ${a.counts_as_hard_cost ? 'checked' : ''} style="width:auto;">Counts toward PPW
-            </label>
-            <button class="btn small a-save-btn" data-id="${a.id}" style="width:auto;">Save</button>
-            <button class="icon-btn a-delete" data-id="${a.id}" title="Remove">✕</button>
-          </div>
-          ${receiptRowHtml(a)}`;
-      }
-      return `
-        <div class="adder-display-row" style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--brand-border); flex-wrap:wrap;">
-          <span style="flex:2; font-weight:500;">${a.label || '—'}</span>
-          <span style="flex:1; color:var(--brand-muted); font-size:13px;">${ADDER_CATEGORY_LABELS[a.category] || a.category}</span>
-          <span style="flex:0 0 90px; font-weight:600; text-align:right;">${fmtMoney(a.amount)}</span>
-          <span style="flex:0 0 auto; font-size:12px; color:${a.counts_as_hard_cost ? 'var(--brand-text)' : 'var(--brand-muted)'};">${a.counts_as_hard_cost ? 'Counts toward PPW' : 'EPC/excl.'}</span>
+    // Group by category for display
+    const grouped = {};
+    CAT_ORDER.forEach((c) => { grouped[c] = []; });
+    DEAL.adders.forEach((a) => { const c = a.category || 'misc'; (grouped[c] || (grouped['misc'])).push(a); });
+    addersHtml = CAT_ORDER.filter((c) => grouped[c] && grouped[c].length).map((cat) => {
+      const items = grouped[cat];
+      const itemsHtml = items.map((a) => `
+        <div class="adder-display-row" style="display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:1px solid var(--brand-border); flex-wrap:wrap;">
+          <span style="flex:2; font-size:13px; font-weight:500;">${a.label || '—'}</span>
+          <span style="flex:0 0 90px; font-size:13px; font-weight:600; text-align:right;">${fmtMoney(a.amount)}</span>
+          <span style="flex:0 0 auto; font-size:11px; color:${a.counts_as_hard_cost ? 'var(--brand-accent)' : 'var(--brand-muted)'};">${a.counts_as_hard_cost ? 'Counts toward PPW' : 'Client Covered Cost'}</span>
         </div>
-        ${receiptRowHtml(a)}`;
+        ${receiptRowHtml(a)}`).join('');
+      return `<div style="margin-top:12px;">
+        <p style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--brand-muted); margin:0 0 4px;">${ADDER_CATEGORY_LABELS[cat] || cat}</p>
+        ${itemsHtml}
+      </div>`;
     }).join('');
   }
 
   el.innerHTML = `<div class="card" style="margin-bottom:20px;">
     <div class="section-header">
-      <p class="section-title" style="margin:0;">Adders <span style="font-weight:400; text-transform:none; font-size:12px;">— everything here counts toward Net PPW unless "EPC/excluded" is checked</span></p>
+      <p class="section-title" style="margin:0;">Adders <span style="font-weight:400; text-transform:none; font-size:12px;">— Counts toward PPW or Client Covered Cost</span></p>
       ${sectionEditing
         ? `<button class="btn secondary small" id="doneAddersBtn" style="flex-shrink:0;">Done</button>`
         : `<button class="btn secondary small" id="editAddersBtn" style="flex-shrink:0;">Edit</button>`}
