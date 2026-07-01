@@ -950,9 +950,16 @@ function renderPayment() {
   const editing = EDITING.has('payment');
   const el = document.getElementById('card-payment');
 
-  function payLine(label, recipient, paid, amount, paidDate) {
-    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--brand-border); flex-wrap:wrap; gap:6px;">
-      <div><strong>${label}</strong>${amount != null ? ` — ${dm(amount)}` : ''}</div>
+  function payRow(label, recipient, paid, amount, paidDate) {
+    const amtStr = amount != null ? ` — ${dm(amount)}` : '';
+    if (!editing) {
+      return `<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--brand-border); flex-wrap:wrap; gap:6px;">
+        <span style="font-size:13px; font-weight:600;">${label}${amtStr}</span>
+        <span style="font-size:12px; color:${paid ? 'var(--brand-text)' : 'var(--brand-muted)'};">${paid ? `✅ Paid ${fmtDate((paidDate || '').slice(0, 10))}` : '⏳ Not yet paid'}</span>
+      </div>`;
+    }
+    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--brand-border); flex-wrap:wrap; gap:6px;">
+      <span style="font-size:13px; font-weight:600;">${label}${amtStr}</span>
       <div style="display:flex; align-items:center; gap:10px;">
         <input type="date" class="pay-date" data-recipient="${recipient}" value="${(paidDate || '').slice(0, 10)}" style="margin:0; padding:6px 8px;${paid ? '' : ' display:none;'}">
         <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" class="pay-toggle" data-recipient="${recipient}" ${paid ? 'checked' : ''} style="width:auto;"> Paid</label>
@@ -960,69 +967,75 @@ function renderPayment() {
     </div>`;
   }
 
-  function internalLine(label, recipient, paid, amount, paidDate, overrideField, reason) {
-    const overrideHtml = editing
-      ? `<div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
-           <input type="number" step="0.01" class="amount-override" data-field="${overrideField}" value="${amount ?? ''}" style="margin:0; max-width:140px;">
-           <button class="btn secondary small amount-save" data-field="${overrideField}" style="width:auto; padding:2px 8px; font-size:11px;">Save</button>
-         </div>
-         ${reason ? `<div style="font-size:11px; color:var(--brand-muted); margin-top:2px;">Override reason: ${reason}</div>` : ''}`
-      : '';
-    return `<div style="padding:10px 0; border-bottom:1px solid var(--brand-border);">
+  function internalRow(label, recipient, paid, amount, paidDate, overrideField, reason) {
+    const amtStr = amount != null ? ` — ${dm(amount)}` : '';
+    if (!editing) {
+      return `<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--brand-border); flex-wrap:wrap; gap:6px;">
+        <span style="font-size:13px; font-weight:600;">${label}${amtStr}</span>
+        <span style="font-size:12px; color:${paid ? 'var(--brand-text)' : 'var(--brand-muted)'};">${paid ? `✅ Paid ${fmtDate((paidDate || '').slice(0, 10))}` : '⏳ Not yet paid'}</span>
+      </div>`;
+    }
+    return `<div style="padding:7px 0; border-bottom:1px solid var(--brand-border);">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
-        <div><strong>${label}</strong>${amount != null ? ` — ${dm(amount)}` : ''}</div>
+        <span style="font-size:13px; font-weight:600;">${label}${amtStr}</span>
         <div style="display:flex; align-items:center; gap:10px;">
           <input type="date" class="pay-date" data-recipient="${recipient}" value="${(paidDate || '').slice(0, 10)}" style="margin:0; padding:6px 8px;${paid ? '' : ' display:none;'}">
           <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" class="pay-toggle" data-recipient="${recipient}" ${paid ? 'checked' : ''} style="width:auto;"> Paid</label>
         </div>
       </div>
-      ${overrideHtml}
+      <div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
+        <input type="number" step="0.01" class="amount-override" data-field="${overrideField}" value="${amount ?? ''}" style="margin:0; max-width:140px;">
+        <button class="btn secondary small amount-save" data-field="${overrideField}" style="width:auto; padding:2px 8px; font-size:11px;">Save</button>
+      </div>
+      ${reason ? `<div style="font-size:11px; color:var(--brand-muted); margin-top:2px;">Override reason: ${reason}</div>` : ''}
     </div>`;
   }
 
-  let html = editing
-    ? `<div class="card" style="margin-bottom:20px;"><p class="section-title">Payment Status</p>`
-    : `<div class="card" style="margin-bottom:20px;"><div class="section-header"><p class="section-title">Payment Status</p><button class="btn secondary small" onclick="startEdit('payment')" style="flex-shrink:0;">Edit Amounts</button></div>`;
+  let html = `<div class="card" style="margin-bottom:20px;">
+    <div class="section-header">
+      <p class="section-title">Payment Status</p>
+      ${editing
+        ? `<button class="btn secondary small" onclick="cancelEdit('payment')" style="flex-shrink:0;">Done</button>`
+        : `<button class="btn secondary small" onclick="startEdit('payment')" style="flex-shrink:0;">Edit</button>`}
+    </div>`;
 
-  if (d.closer_rep_id) html += payLine('Closer', 'closer', d.closer_paid, d.closer_pay_net, d.closer_paid_date);
-  if (d.setter_rep_id) html += payLine('Setter', 'setter', d.setter_paid, d.setter_pay, d.setter_paid_date);
-  html += `<p class="section-title" style="margin-top:16px;">Internal Payroll <span style="font-weight:400; text-transform:none; font-size:12px;">(admin only)${editing ? ' — click Save on each row to override' : ''}</span></p>`;
-  html += internalLine('Etai — M1', 'owner_etai_m1', d.owner_etai_m1_paid, d.owner_etai_m1_amount, d.owner_etai_m1_paid_date, 'owner_etai_m1_amount', fieldOverrideReason(d, 'owner_etai_m1_amount'));
-  html += internalLine('Etai — M2', 'owner_etai_m2', d.owner_etai_m2_paid, d.owner_etai_m2_amount, d.owner_etai_m2_paid_date, 'owner_etai_m2_amount', fieldOverrideReason(d, 'owner_etai_m2_amount'));
-  html += internalLine('Noy — M1', 'owner_noy_m1', d.owner_noy_m1_paid, d.owner_noy_m1_amount, d.owner_noy_m1_paid_date, 'owner_noy_m1_amount', fieldOverrideReason(d, 'owner_noy_m1_amount'));
-  html += internalLine('Noy — M2', 'owner_noy_m2', d.owner_noy_m2_paid, d.owner_noy_m2_amount, d.owner_noy_m2_paid_date, 'owner_noy_m2_amount', fieldOverrideReason(d, 'owner_noy_m2_amount'));
-  html += internalLine("Joey’s Bonus — M1", 'joey_m1', d.joey_m1_paid, d.joey_m1_bonus, d.joey_m1_paid_date, 'joey_m1_bonus', fieldOverrideReason(d, 'joey_m1_bonus'));
-  html += internalLine("Joey’s Bonus — M2", 'joey', d.joey_paid, d.joey_m2_bonus, d.joey_paid_date, 'joey_m2_bonus', fieldOverrideReason(d, 'joey_m2_bonus'));
-
-  if (editing) {
-    html += `<div style="display:flex; gap:8px; margin-top:16px;"><button class="btn secondary small" onclick="cancelEdit('payment')" style="width:auto;">Done</button></div>`;
-  }
+  if (d.closer_rep_id) html += payRow('Closer', 'closer', d.closer_paid, d.closer_pay_net, d.closer_paid_date);
+  if (d.setter_rep_id) html += payRow('Setter', 'setter', d.setter_paid, d.setter_pay, d.setter_paid_date);
+  html += `<p style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--brand-muted); margin:14px 0 4px;">Internal Payroll <span style="font-weight:400; text-transform:none; font-size:11px;">(admin only)${editing ? ' — save each row to override amount' : ''}</span></p>`;
+  html += internalRow('Etai — M1', 'owner_etai_m1', d.owner_etai_m1_paid, d.owner_etai_m1_amount, d.owner_etai_m1_paid_date, 'owner_etai_m1_amount', fieldOverrideReason(d, 'owner_etai_m1_amount'));
+  html += internalRow('Etai — M2', 'owner_etai_m2', d.owner_etai_m2_paid, d.owner_etai_m2_amount, d.owner_etai_m2_paid_date, 'owner_etai_m2_amount', fieldOverrideReason(d, 'owner_etai_m2_amount'));
+  html += internalRow('Noy — M1', 'owner_noy_m1', d.owner_noy_m1_paid, d.owner_noy_m1_amount, d.owner_noy_m1_paid_date, 'owner_noy_m1_amount', fieldOverrideReason(d, 'owner_noy_m1_amount'));
+  html += internalRow('Noy — M2', 'owner_noy_m2', d.owner_noy_m2_paid, d.owner_noy_m2_amount, d.owner_noy_m2_paid_date, 'owner_noy_m2_amount', fieldOverrideReason(d, 'owner_noy_m2_amount'));
+  html += internalRow("Joey's Bonus — M1", 'joey_m1', d.joey_m1_paid, d.joey_m1_bonus, d.joey_m1_paid_date, 'joey_m1_bonus', fieldOverrideReason(d, 'joey_m1_bonus'));
+  html += internalRow("Joey's Bonus — M2", 'joey', d.joey_paid, d.joey_m2_bonus, d.joey_paid_date, 'joey_m2_bonus', fieldOverrideReason(d, 'joey_m2_bonus'));
   html += `</div>`;
   el.innerHTML = html;
 
-  async function sendPayment(recipient, paid, date, checkboxEl, dateInputEl) {
-    if (dateInputEl) dateInputEl.style.display = paid ? '' : 'none';
-    try {
-      DEAL = await api('POST', `/api/deals/${dealId}/payment`, { recipient, paid, date });
-      renderAudit();
-    } catch (e) {
-      alert(e.message);
-      if (checkboxEl) checkboxEl.checked = !paid;
-      if (dateInputEl) dateInputEl.style.display = !paid ? '' : 'none';
+  if (editing) {
+    async function sendPayment(recipient, paid, date, checkboxEl, dateInputEl) {
+      if (dateInputEl) dateInputEl.style.display = paid ? '' : 'none';
+      try {
+        DEAL = await api('POST', `/api/deals/${dealId}/payment`, { recipient, paid, date });
+        renderAudit();
+      } catch (e) {
+        alert(e.message);
+        if (checkboxEl) checkboxEl.checked = !paid;
+        if (dateInputEl) dateInputEl.style.display = !paid ? '' : 'none';
+      }
     }
-  }
-
-  el.querySelectorAll('.pay-toggle').forEach((box) => {
-    box.addEventListener('change', () => {
-      const dateInput = el.querySelector(`.pay-date[data-recipient="${box.dataset.recipient}"]`);
-      sendPayment(box.dataset.recipient, box.checked, dateInput ? dateInput.value : null, box, dateInput);
+    el.querySelectorAll('.pay-toggle').forEach((box) => {
+      box.addEventListener('change', () => {
+        const dateInput = el.querySelector(`.pay-date[data-recipient="${box.dataset.recipient}"]`);
+        sendPayment(box.dataset.recipient, box.checked, dateInput ? dateInput.value : null, box, dateInput);
+      });
     });
-  });
-  el.querySelectorAll('.pay-date').forEach((input) => {
-    input.addEventListener('change', () => { sendPayment(input.dataset.recipient, true, input.value, null, input); });
-  });
-  wireAmountOverrideButtons();
+    el.querySelectorAll('.pay-date').forEach((input) => {
+      input.addEventListener('change', () => { sendPayment(input.dataset.recipient, true, input.value, null, input); });
+    });
+    wireAmountOverrideButtons();
+  }
 }
+
 
 function renderAudit() {
   const log = DEAL.auditLog || [];
@@ -1155,17 +1168,28 @@ function wireSetterOverrideForm() {
 
 // --- Main page rendering ---
 
+async function getCachedMeta() {
+  const KEY = 'powered_meta_cache', TTL = 30000;
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(KEY) || 'null');
+    if (cached && Date.now() - cached.ts < TTL) return cached.data;
+  } catch (e) { /* ignore parse errors */ }
+  const data = await api('GET', '/api/meta');
+  try { sessionStorage.setItem(KEY, JSON.stringify({ ts: Date.now(), data })); } catch (e) {}
+  return data;
+}
+
 async function init() {
   if (dealId) {
     const [metaResp, dealResp, settingsResp] = await Promise.all([
-      api('GET', '/api/meta'),
+      getCachedMeta(),
       api('GET', `/api/deals/${dealId}`),
       api('GET', '/api/settings')
     ]);
     META = metaResp; DEAL = dealResp; SETTINGS = settingsResp.commissionSettings;
     renderFull();
   } else {
-    META = await api('GET', '/api/meta');
+    META = await getCachedMeta();
     renderCreateForm();
   }
 }
