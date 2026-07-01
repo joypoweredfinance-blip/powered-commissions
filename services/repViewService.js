@@ -49,6 +49,7 @@ function shapeForRole(deal) {
     panel_count: deal.panel_count, panel_watts: deal.panel_watts,
     annual_production_kwh: deal.annual_production_kwh, escalator_pct: deal.escalator_pct,
     date_signed: deal.date_signed, install_date: deal.install_date, install_completed_date: deal.install_completed_date,
+    roof_date: deal.roof_date,
     closer_display: deal.closer_display || deal.closer_name,
     setter_display: deal.setter_display || deal.setter_name,
     viewRole: deal.viewRole
@@ -61,6 +62,7 @@ function shapeForRole(deal) {
       net_ppw: deal.net_ppw, pay_scale_rate: deal.pay_scale_rate, below_floor: deal.below_floor,
       payAmount: deal.closer_pay_net,
       payGross: deal.closer_pay_gross,
+      cashback_amount: deal.cashback_amount || 0,
       // Each of these is 0 when not applicable — the frontend only renders the row when truthy,
       // since these deductions are already baked into payAmount and showing a $0 line for a
       // deduction that never applied would just be confusing.
@@ -86,11 +88,13 @@ function shapeForRole(deal) {
 // an internal-only classification and folds into Miscellaneous here so reps never see it as
 // its own category. Only used for the Closer's real adders — the Setter's adder "totals" are
 // just Joy's preliminary MPU/Roof/Battery/Misc numbers directly, see setterAdderTotals() below.
-const REP_ADDER_CATEGORIES = ['reroof_sow', 'mpu', 'battery', 'permit', 'misc'];
+// Permits are an internal-only category — never shown to reps. They fold into Miscellaneous
+// here so reps never see a Permit line anywhere in their view.
+const REP_ADDER_CATEGORIES = ['reroof_sow', 'mpu', 'battery', 'misc'];
 function computeAdderCategoryTotals(adders) {
-  const totals = { reroof_sow: 0, mpu: 0, battery: 0, permit: 0, misc: 0 };
+  const totals = { reroof_sow: 0, mpu: 0, battery: 0, misc: 0 };
   for (const a of adders) {
-    const cat = a.category === 'other' ? 'misc' : a.category;
+    const cat = (a.category === 'other' || a.category === 'permit') ? 'misc' : a.category;
     if (totals[cat] !== undefined) totals[cat] = round2(totals[cat] + (a.amount || 0));
   }
   return totals;

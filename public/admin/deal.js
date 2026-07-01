@@ -90,6 +90,7 @@ function renderSectionById(key) {
   else if (key === 'funds') renderFundsReceived();
   else if (key === 'payment') renderPayment();
   else if (key === 'estimate') renderOriginalEstimate();
+  else if (key === 'adders') renderAdders();
 }
 
 async function saveSection(key) {
@@ -138,7 +139,9 @@ async function saveSection(key) {
       m2_paid_date: dateOrNull(val('f_m2_paid_date')),
     };
   } else if (key === 'notes') {
-    data = { admin_notes: val('f_admin_notes') };
+    const updatedReasons = (() => { try { return JSON.parse(DEAL.field_override_reasons || '{}'); } catch (e) { return {}; } })();
+    document.querySelectorAll('.override-reason-input').forEach((inp) => { updatedReasons[inp.dataset.field] = inp.value; });
+    data = { admin_notes: val('f_admin_notes'), field_override_reasons: JSON.stringify(updatedReasons) };
   }
   try {
     DEAL = await api('PUT', `/api/deals/${dealId}`, data);
@@ -390,12 +393,24 @@ function overrideNotesHtml() {
 function renderAdminNotes() {
   const d = DEAL;
   const el = document.getElementById('card-notes');
+  const reasonsMap = (() => { try { return JSON.parse(DEAL.field_override_reasons || '{}'); } catch (e) { return {}; } })();
+  const overrideEntries = Object.entries(reasonsMap).filter(([, r]) => r);
   if (EDITING.has('notes')) {
+    const overrideEditHtml = overrideEntries.length
+      ? `<div style="margin-top:14px; border-top:1px solid var(--brand-border); padding-top:12px;">
+          <p style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--brand-muted); margin-bottom:8px;">Override Notes</p>
+          ${overrideEntries.map(([field, reason]) => `
+            <div style="margin-bottom:10px;">
+              <label style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">${OVERRIDE_FIELD_LABELS[field] || field}</label>
+              <input type="text" class="override-reason-input" data-field="${field}" value="${(reason || '').replace(/"/g, '&quot;')}" style="width:100%;">
+            </div>`).join('')}
+        </div>`
+      : '';
     el.innerHTML = `<div class="card" style="margin-bottom:20px;">
       <p class="section-title">Admin Notes <span style="font-weight:400; text-transform:none;">(never visible to reps)</span></p>
       <textarea id="f_admin_notes" rows="4">${(d.admin_notes || '').replace(/</g, '&lt;')}</textarea>
+      ${overrideEditHtml}
       ${sectionSaveBtns('notes')}
-      ${overrideNotesHtml()}
     </div>`;
   } else {
     el.innerHTML = `<div class="card" style="margin-bottom:20px;">
@@ -422,74 +437,86 @@ function receiptRowHtml(a) {
 }
 
 function renderAdders() {
-  const list = document.getElementById('addersList');
-  if (!DEAL.adders.length) {
-    list.innerHTML = `<p style="color:var(--brand-muted); font-size:13px;">No line items yet — add MPU, battery, re-roof, permits, etc.</p>`;
-    return;
-  }
+  const el = document.getElementById('card-adders');
+  const sectionEditing = EDITING.has('adders');
   const catOptions = (a) => Object.entries(ADDER_CATEGORY_LABELS).map(([c, label]) => `<option value="${c}" ${c === a.category ? 'selected' : ''}>${label}</option>`).join('');
-  list.innerHTML = DEAL.adders.map((a) => {
-    const editing = EDITING_ADDER.has(String(a.id));
-    if (editing) {
+
+  let addersHtml;
+  if (!DEAL.adders.length) {
+    addersHtml = `<p style="color:var(--brand-muted); font-size:13px;">No line items yet — add MPU, battery, re-roof, permits, etc.</p>`;
+  } else {
+    addersHtml = DEAL.adders.map((a) => {
+      if (sectionEditing) {
+        return `
+          <div class="adder-row" data-id="${a.id}">
+            <input type="text" class="a-label" value="${(a.label || '').replace(/"/g, '&quot;')}" placeholder="Label">
+            <select class="a-category">${catOptions(a)}</select>
+            <input type="number" step="0.01" class="a-amount" value="${a.amount}">
+            <label style="display:flex; align-items:center; gap:4px; font-size:12px; white-space:nowrap;">
+              <input type="checkbox" class="a-hardcost" ${a.counts_as_hard_cost ? 'checked' : ''} style="width:auto;">Counts toward PPW
+            </label>
+            <button class="btn small a-save-btn" data-id="${a.id}" style="width:auto;">Save</button>
+            <button class="icon-btn a-delete" data-id="${a.id}" title="Remove">✕</button>
+          </div>
+          ${receiptRowHtml(a)}`;
+      }
       return `
-        <div class="adder-row" data-id="${a.id}">
-          <input type="text" class="a-label" value="${(a.label || '').replace(/"/g, '&quot;')}" placeholder="Label">
-          <select class="a-category">${catOptions(a)}</select>
-          <input type="number" step="0.01" class="a-amount" value="${a.amount}">
-          <label style="display:flex; align-items:center; gap:4px; font-size:12px; white-space:nowrap;">
-            <input type="checkbox" class="a-hardcost" ${a.counts_as_hard_cost ? 'checked' : ''} style="width:auto;">Counts toward PPW
-          </label>
-          <button class="btn small a-save-btn" data-id="${a.id}" style="width:auto;">Save</button>
-          <button class="btn secondary small a-cancel-btn" data-id="${a.id}" style="width:auto; padding:4px 10px;">Cancel</button>
+        <div class="adder-display-row" style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--brand-border); flex-wrap:wrap;">
+          <span style="flex:2; font-weight:500;">${a.label || '—'}</span>
+          <span style="flex:1; color:var(--brand-muted); font-size:13px;">${ADDER_CATEGORY_LABELS[a.category] || a.category}</span>
+          <span style="flex:0 0 90px; font-weight:600; text-align:right;">${fmtMoney(a.amount)}</span>
+          <span style="flex:0 0 auto; font-size:12px; color:${a.counts_as_hard_cost ? 'var(--brand-text)' : 'var(--brand-muted)'};">${a.counts_as_hard_cost ? 'Counts toward PPW' : 'EPC/excl.'}</span>
         </div>
         ${receiptRowHtml(a)}`;
-    }
-    return `
-      <div class="adder-display-row" style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--brand-border); flex-wrap:wrap;">
-        <span style="flex:2; font-weight:500;">${a.label || '—'}</span>
-        <span style="flex:1; color:var(--brand-muted); font-size:13px;">${ADDER_CATEGORY_LABELS[a.category] || a.category}</span>
-        <span style="flex:0 0 90px; font-weight:600; text-align:right;">${fmtMoney(a.amount)}</span>
-        <span style="flex:0 0 auto; font-size:12px; color:${a.counts_as_hard_cost ? 'var(--brand-text)' : 'var(--brand-muted)'};">${a.counts_as_hard_cost ? 'Counts toward PPW' : 'EPC/excl.'}</span>
-        <button class="btn secondary small a-edit-btn" data-id="${a.id}" style="width:auto; padding:4px 10px;">Edit</button>
-        <button class="icon-btn a-delete" data-id="${a.id}" title="Remove">✕</button>
-      </div>
-      ${receiptRowHtml(a)}`;
-  }).join('');
+    }).join('');
+  }
 
-  list.querySelectorAll('.a-edit-btn').forEach((btn) => {
-    btn.addEventListener('click', () => { EDITING_ADDER.add(btn.dataset.id); renderAdders(); });
-  });
-  list.querySelectorAll('.adder-row').forEach((row) => {
-    const id = row.dataset.id;
-    const doSave = async () => {
-      try {
-        DEAL = await api('PUT', `/api/deals/${dealId}/adders/${id}`, {
-          label: row.querySelector('.a-label').value,
-          category: row.querySelector('.a-category').value,
-          amount: parseFloat(row.querySelector('.a-amount').value) || 0,
-          counts_as_hard_cost: row.querySelector('.a-hardcost').checked
-        });
-        EDITING_ADDER.delete(id);
-        renderAdders();
-        renderCalc();
-      } catch (e) { alert(e.message); }
-    };
-    const saveBtn = row.querySelector('.a-save-btn');
-    if (saveBtn) saveBtn.addEventListener('click', doSave);
-    const cancelBtn = row.querySelector('.a-cancel-btn');
-    if (cancelBtn) cancelBtn.addEventListener('click', () => { EDITING_ADDER.delete(id); renderAdders(); });
-  });
-  list.querySelectorAll('.a-delete').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      try {
-        DEAL = await api('DELETE', `/api/deals/${dealId}/adders/${btn.dataset.id}`);
-        EDITING_ADDER.delete(btn.dataset.id);
-        renderAdders();
-        renderCalc();
-      } catch (e) { alert(e.message); }
+  el.innerHTML = `<div class="card" style="margin-bottom:20px;">
+    <div class="section-header">
+      <p class="section-title" style="margin:0;">Adders <span style="font-weight:400; text-transform:none; font-size:12px;">— everything here counts toward Net PPW unless "EPC/excluded" is checked</span></p>
+      ${sectionEditing
+        ? `<button class="btn secondary small" id="doneAddersBtn" style="flex-shrink:0;">Done</button>`
+        : `<button class="btn secondary small" id="editAddersBtn" style="flex-shrink:0;">Edit</button>`}
+    </div>
+    <div id="addersList">${addersHtml}</div>
+    <button class="btn secondary small" id="addAdderBtn" style="margin-top:10px;">+ Add Line Item</button>
+  </div>`;
+
+  const editBtn = el.querySelector('#editAddersBtn');
+  if (editBtn) editBtn.addEventListener('click', () => { EDITING.add('adders'); renderAdders(); });
+  const doneBtn = el.querySelector('#doneAddersBtn');
+  if (doneBtn) doneBtn.addEventListener('click', () => { EDITING.delete('adders'); renderAdders(); });
+
+  if (sectionEditing) {
+    el.querySelectorAll('.adder-row').forEach((row) => {
+      const id = row.dataset.id;
+      const doSave = async () => {
+        try {
+          DEAL = await api('PUT', `/api/deals/${dealId}/adders/${id}`, {
+            label: row.querySelector('.a-label').value,
+            category: row.querySelector('.a-category').value,
+            amount: parseFloat(row.querySelector('.a-amount').value) || 0,
+            counts_as_hard_cost: row.querySelector('.a-hardcost').checked
+          });
+          renderAdders();
+          renderCalc();
+        } catch (e) { alert(e.message); }
+      };
+      const saveBtn = row.querySelector('.a-save-btn');
+      if (saveBtn) saveBtn.addEventListener('click', doSave);
     });
-  });
-  list.querySelectorAll('.adder-receipt-row').forEach((row) => {
+    el.querySelectorAll('.a-delete').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        try {
+          DEAL = await api('DELETE', `/api/deals/${dealId}/adders/${btn.dataset.id}`);
+          renderAdders();
+          renderCalc();
+        } catch (e) { alert(e.message); }
+      });
+    });
+  }
+
+  el.querySelectorAll('.adder-receipt-row').forEach((row) => {
     const id = row.dataset.id;
     const uploadBtn = row.querySelector('.a-receipt-upload');
     const receiptInput = row.querySelector('.a-receipt-input');
@@ -515,7 +542,18 @@ function renderAdders() {
       try { DEAL = await api('DELETE', `/api/deals/${dealId}/adders/${id}/file`); renderAdders(); } catch (e) { alert(e.message); }
     });
   });
+
+  const addAdderBtn = el.querySelector('#addAdderBtn');
+  if (addAdderBtn) addAdderBtn.addEventListener('click', (e) => guardedClick(e.target, 'Adding…', async () => {
+    try {
+      DEAL = await api('POST', `/api/deals/${dealId}/adders`, { label: 'New item', category: 'misc', amount: 0, counts_as_hard_cost: true });
+      EDITING.add('adders');
+      renderAdders();
+      renderCalc();
+    } catch (e2) { alert(e2.message); }
+  }));
 }
+
 
 // --- Calculator helpers ---
 
@@ -1160,13 +1198,10 @@ function renderFull() {
       <div>
         <div id="card-project"></div>
         <div id="card-finance"></div>
-        <div class="card" style="margin-bottom:20px;">
-          <p class="section-title">Adders <span style="font-weight:400; text-transform:none; font-size:12px;">— everything here counts toward Net PPW unless "EPC/excluded" is checked</span></p>
-          <div id="addersList"></div>
-          <button class="btn secondary small" id="addAdderBtn">+ Add Line Item</button>
-        </div>
+        <div id="card-adders"></div>
         <div id="card-milestones"></div>
         <div id="card-payment"></div>
+        <div id="card-notes"></div>
       </div>
       <div>
         <div class="card" style="margin-bottom:20px;">
@@ -1201,8 +1236,6 @@ function renderFull() {
           <div id="approvalBox"></div>
         </div>
 
-        <div id="card-notes"></div>
-
         <div class="card">
           <p class="section-title">Audit History</p>
           <div id="auditBox" style="max-height:320px; overflow-y:auto;"></div>
@@ -1230,17 +1263,6 @@ function renderFull() {
 }
 
 function wireEvents() {
-  document.getElementById('addAdderBtn').addEventListener('click', (e) => guardedClick(e.target, 'Adding…', async () => {
-    try {
-      DEAL = await api('POST', `/api/deals/${dealId}/adders`, { label: 'New item', category: 'misc', amount: 0, counts_as_hard_cost: true });
-      // Put the new adder immediately into edit mode so Joy can type the label right away
-      const newest = DEAL.adders[DEAL.adders.length - 1];
-      if (newest) EDITING_ADDER.add(String(newest.id));
-      renderAdders();
-      renderCalc();
-    } catch (e2) { alert(e2.message); }
-  }));
-
   document.getElementById('recalcBtn').addEventListener('click', (e) => guardedClick(e.target, 'Recalculating…', async () => {
     if (DEAL.manual_override) {
       alert("This deal has a manual override active — Recalculate won't touch those fields. To discard a specific override, use that calculator's \"Edit Override\" → \"Turn Off & Recalculate\".");

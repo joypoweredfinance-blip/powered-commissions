@@ -27,7 +27,7 @@ const EDITABLE_FIELDS = [
   'system_size_kw', 'panel_count', 'panel_watts', 'annual_production_kwh', 'contract_value', 'epc_rate_per_watt',
   'monthly_payment', 'rate_per_kwh', 'escalator_pct', 'cashback_amount', 'date_signed', 'install_date',
   'install_completed_date', 'ntp_approved_date', 'm1_approved_date', 'm1_paid_date', 'pto_granted_date',
-  'm2_approved_date', 'm2_paid_date', 'admin_notes',
+  'm2_approved_date', 'm2_paid_date', 'admin_notes', 'field_override_reasons',
   'funds_received_m1', 'funds_received_m1_date', 'funds_received_m2', 'funds_received_m2_date',
   // Funds Pending is Joy's own manual call, not derived from Expected minus Received — installer
   // funding quirks mean that subtraction doesn't always reflect what's actually still owed.
