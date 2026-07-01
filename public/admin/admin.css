@@ -175,6 +175,8 @@ table.data-table th.col-compact, table.data-table td.col-compact { font-size: 12
    clean report instead of a screenshot of the whole app shell. */
 @media print {
   .sidebar, .sidebar-backdrop, .menu-toggle, .user-chip, .filter-grid, button, .no-print { display: none !important; }
+  .print-logo-header { display: flex !important; align-items: center; padding: 12px 0 14px; }
+  .print-logo-header img { height: 48px; width: auto; }
   .app-shell { display: block; }
   .page-content { padding: 0; max-width: none; }
   .topbar { border-bottom: 2px solid #000; }

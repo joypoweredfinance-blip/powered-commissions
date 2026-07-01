@@ -33,9 +33,9 @@ a { color: var(--brand-purple); text-decoration: none; }
   display: inline-flex;
   align-items: center;
 }
-.brand-logo img { height: 22px; width: auto; display: block; }
-.sidebar .brand-logo img { height: 20px; }
-.auth-card .brand-logo img { height: 28px; }
+.brand-logo img { height: 44px; width: auto; display: block; }
+.sidebar .brand-logo img { height: 48px; }
+.auth-card .brand-logo img { height: 58px; }
 
 .auth-shell {
   min-height: 100vh;

@@ -6,10 +6,48 @@
 <title>Job Detail — POWERED Commissions</title>
 <link rel="stylesheet" href="/shared/brand.css">
 <link rel="stylesheet" href="/rep/rep.css">
+<style>
+#pdfBtn {
+  position: fixed;
+  bottom: 76px;
+  right: 16px;
+  background: var(--brand-purple);
+  color: #fff;
+  border: none;
+  border-radius: 50px;
+  padding: 11px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(107,63,212,0.35);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: inherit;
+}
+.print-logo-header { display: none; }
+@media print {
+  .rep-header, .rep-tabbar, #pdfBtn { display: none !important; }
+  .rep-content { padding: 12px 20px !important; }
+  .print-logo-header {
+    display: block !important;
+    padding: 0 0 14px;
+    border-bottom: 2px solid #15131A;
+    margin-bottom: 16px;
+  }
+  .print-logo-header img { height: 48px; width: auto; }
+  .detail-section { break-inside: avoid; page-break-inside: avoid; }
+}
+</style>
 </head>
 <body>
 <script src="/rep/rep-common.js"></script>
 <script>renderRepShell('/rep/jobs.html');</script>
+<button id="pdfBtn" onclick="window.print()">
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+  Download PDF
+</button>
 <script>
 const jobId = new URLSearchParams(window.location.search).get('id');
 function fmtRate(n) { return (n === null || n === undefined || n === '') ? '—' : '$' + Number(n).toFixed(3); }
@@ -38,6 +76,10 @@ async function load() {
   }
   const isCloser = j.viewRole === 'closer';
   document.getElementById('pageContent').innerHTML = `
+    <div class="print-logo-header">
+      <img src="/shared/logo.svg" alt="POWERED Finance Dashboard">
+    </div>
+
     <div class="breakdown-header role-${j.viewRole}">
       <div class="role-label">${isCloser ? 'Final Breakdown · Closer' : 'Setter Pay Breakdown'}</div>
       <div class="customer">${j.customer_name}</div>

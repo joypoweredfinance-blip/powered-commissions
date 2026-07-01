@@ -46,6 +46,9 @@ function renderAdminShell(activeHref, pageTitle) {
       <div class="main-area">
         <div class="topbar">
           <div style="display:flex; align-items:center; gap:12px;">
+            <div class="print-logo-header" style="display:none;">
+              <img src="/shared/logo.svg" alt="POWERED Finance Dashboard">
+            </div>
             <button class="icon-btn menu-toggle" id="menuToggle" aria-label="Menu">☰</button>
             <h1>${pageTitle}</h1>
           </div>
