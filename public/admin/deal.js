@@ -783,7 +783,7 @@ function renderFundsReceived() {
             <td style="padding:7px 8px 7px 0; color:var(--brand-muted); ${cellBorder}">${label}</td>
             <td style="padding:7px 8px; text-align:right; ${cellBorder}">${exp != null ? fmtMoney(exp) : '—'}</td>
             <td style="padding:7px 8px; text-align:right; ${cellBorder} ${rec ? 'color:#1D9E75; font-weight:600;' : 'color:var(--brand-muted);'}">${rec != null ? fmtMoney(rec) : '—'}</td>
-            <td style="padding:7px 0 7px 8px; text-align:right; font-size:12px; color:${date ? 'var(--brand-text)' : 'var(--brand-muted)'}; ${cellBorder}">${date ? fmtDate(date.slice(0, 10)) : 'Pending'}</td>
+            <td style="padding:7px 0 7px 8px; text-align:right; font-size:12px; color:${date ? 'var(--brand-text)' : 'var(--brand-muted)'}; ${cellBorder}">${date ? fmtDate(date.slice(0, 10)) : (exp === 0 ? 'N/A' : 'Pending')}</td>
           </tr>`).join('')}
         </tbody>
         <tfoot>
