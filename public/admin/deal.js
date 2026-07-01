@@ -949,45 +949,49 @@ function renderPayment() {
   const d = DEAL;
   const editing = EDITING.has('payment');
   const el = document.getElementById('card-payment');
+  const naFlags = (() => { try { return JSON.parse(d.payment_na_flags || '{}'); } catch (e) { return {}; } })();
+
+  function statusBadge(recipient, paid, paidDate) {
+    if (naFlags[recipient]) return `<span style="font-size:12px; color:var(--brand-muted);">N/A</span>`;
+    if (paid) return `<span style="font-size:12px;">✅ Paid ${fmtDate((paidDate || '').slice(0, 10))}</span>`;
+    return `<span style="font-size:12px; color:var(--brand-muted);">⏳ Not yet paid</span>`;
+  }
+
+  function statusSelect(recipient, paid, paidDate) {
+    const cur = naFlags[recipient] ? 'na' : paid ? 'paid' : 'pending';
+    return `<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+      <select class="pay-select" data-recipient="${recipient}" style="margin:0; padding:4px 6px; font-size:13px; width:auto;">
+        <option value="pending" ${cur === 'pending' ? 'selected' : ''}>⏳ Not yet paid</option>
+        <option value="paid" ${cur === 'paid' ? 'selected' : ''}>✅ Paid</option>
+        <option value="na" ${cur === 'na' ? 'selected' : ''}>N/A</option>
+      </select>
+      <input type="date" class="pay-date" data-recipient="${recipient}" value="${(paidDate || '').slice(0, 10)}" style="margin:0; padding:4px 6px;${cur === 'paid' ? '' : ' display:none;'}">
+    </div>`;
+  }
 
   function payRow(label, recipient, paid, amount, paidDate) {
     const amtStr = amount != null ? ` — ${dm(amount)}` : '';
-    if (!editing) {
-      return `<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--brand-border); flex-wrap:wrap; gap:6px;">
-        <span style="font-size:13px; font-weight:600;">${label}${amtStr}</span>
-        <span style="font-size:12px; color:${paid ? 'var(--brand-text)' : 'var(--brand-muted)'};">${paid ? `✅ Paid ${fmtDate((paidDate || '').slice(0, 10))}` : '⏳ Not yet paid'}</span>
-      </div>`;
-    }
     return `<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--brand-border); flex-wrap:wrap; gap:6px;">
       <span style="font-size:13px; font-weight:600;">${label}${amtStr}</span>
-      <div style="display:flex; align-items:center; gap:10px;">
-        <input type="date" class="pay-date" data-recipient="${recipient}" value="${(paidDate || '').slice(0, 10)}" style="margin:0; padding:6px 8px;${paid ? '' : ' display:none;'}">
-        <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" class="pay-toggle" data-recipient="${recipient}" ${paid ? 'checked' : ''} style="width:auto;"> Paid</label>
-      </div>
+      ${editing ? statusSelect(recipient, paid, paidDate) : statusBadge(recipient, paid, paidDate)}
     </div>`;
   }
 
   function internalRow(label, recipient, paid, amount, paidDate, overrideField, reason) {
     const amtStr = amount != null ? ` — ${dm(amount)}` : '';
-    if (!editing) {
-      return `<div style="display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--brand-border); flex-wrap:wrap; gap:6px;">
-        <span style="font-size:13px; font-weight:600;">${label}${amtStr}</span>
-        <span style="font-size:12px; color:${paid ? 'var(--brand-text)' : 'var(--brand-muted)'};">${paid ? `✅ Paid ${fmtDate((paidDate || '').slice(0, 10))}` : '⏳ Not yet paid'}</span>
-      </div>`;
-    }
+    const overrideHtml = editing
+      ? `<div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
+           <input type="number" step="0.01" class="amount-override" data-field="${overrideField}" value="${amount ?? ''}" style="margin:0; max-width:140px;">
+           <button class="btn secondary small amount-save" data-field="${overrideField}" style="width:auto; padding:2px 8px; font-size:11px;">Save</button>
+         </div>
+         ${reason ? `<div style="font-size:11px; color:var(--brand-muted); margin-top:2px;">Override reason: ${reason}</div>` : ''}`
+      : '';
     return `<div style="padding:7px 0; border-bottom:1px solid var(--brand-border);">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
         <span style="font-size:13px; font-weight:600;">${label}${amtStr}</span>
-        <div style="display:flex; align-items:center; gap:10px;">
-          <input type="date" class="pay-date" data-recipient="${recipient}" value="${(paidDate || '').slice(0, 10)}" style="margin:0; padding:6px 8px;${paid ? '' : ' display:none;'}">
-          <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" class="pay-toggle" data-recipient="${recipient}" ${paid ? 'checked' : ''} style="width:auto;"> Paid</label>
-        </div>
+        ${editing ? statusSelect(recipient, paid, paidDate) : statusBadge(recipient, paid, paidDate)}
       </div>
-      <div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
-        <input type="number" step="0.01" class="amount-override" data-field="${overrideField}" value="${amount ?? ''}" style="margin:0; max-width:140px;">
-        <button class="btn secondary small amount-save" data-field="${overrideField}" style="width:auto; padding:2px 8px; font-size:11px;">Save</button>
-      </div>
-      ${reason ? `<div style="font-size:11px; color:var(--brand-muted); margin-top:2px;">Override reason: ${reason}</div>` : ''}
+      ${overrideHtml}
     </div>`;
   }
 
@@ -1012,25 +1016,26 @@ function renderPayment() {
   el.innerHTML = html;
 
   if (editing) {
-    async function sendPayment(recipient, paid, date, checkboxEl, dateInputEl) {
-      if (dateInputEl) dateInputEl.style.display = paid ? '' : 'none';
+    async function sendPayment(recipient, status, date) {
+      const paid = status === 'paid';
+      const na = status === 'na';
       try {
-        DEAL = await api('POST', `/api/deals/${dealId}/payment`, { recipient, paid, date });
+        DEAL = await api('POST', `/api/deals/${dealId}/payment`, { recipient, paid, date: paid ? date : null, na });
+        renderPayment();
         renderAudit();
-      } catch (e) {
-        alert(e.message);
-        if (checkboxEl) checkboxEl.checked = !paid;
-        if (dateInputEl) dateInputEl.style.display = !paid ? '' : 'none';
-      }
+      } catch (e) { alert(e.message); }
     }
-    el.querySelectorAll('.pay-toggle').forEach((box) => {
-      box.addEventListener('change', () => {
-        const dateInput = el.querySelector(`.pay-date[data-recipient="${box.dataset.recipient}"]`);
-        sendPayment(box.dataset.recipient, box.checked, dateInput ? dateInput.value : null, box, dateInput);
+    el.querySelectorAll('.pay-select').forEach((sel) => {
+      sel.addEventListener('change', () => {
+        const dateInput = el.querySelector(`.pay-date[data-recipient="${sel.dataset.recipient}"]`);
+        if (dateInput) dateInput.style.display = sel.value === 'paid' ? '' : 'none';
+        if (sel.value !== 'paid') {
+          sendPayment(sel.dataset.recipient, sel.value, null);
+        }
       });
     });
     el.querySelectorAll('.pay-date').forEach((input) => {
-      input.addEventListener('change', () => { sendPayment(input.dataset.recipient, true, input.value, null, input); });
+      input.addEventListener('change', () => { sendPayment(input.dataset.recipient, 'paid', input.value); });
     });
     wireAmountOverrideButtons();
   }

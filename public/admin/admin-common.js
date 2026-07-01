@@ -93,6 +93,12 @@ function fmtMoney(n) {
 function fmtDate(d) {
   if (!d) return '—';
   try {
+    const s = String(d).slice(0, 10);
+    // Parse YYYY-MM-DD as local midnight to avoid UTC-offset shifting the date by one day.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      const [y, m, day] = s.split('-').map(Number);
+      return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
     return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   } catch (e) { return d; }
 }

@@ -45,8 +45,14 @@ function fmtMoney(n) {
 }
 function fmtDate(d) {
   if (!d) return '—';
-  try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
-  catch (e) { return d; }
+  try {
+    const s = String(d).slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      const [y, m, day] = s.split('-').map(Number);
+      return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch (e) { return d; }
 }
 async function api(method, url, body) {
   const res = await fetch(url, {

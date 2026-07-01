@@ -415,7 +415,7 @@ async function setApproval(dealId, role, approved, userId) {
   return getDeal(dealId);
 }
 
-async function setPaymentFlag(dealId, recipient, paid, date, userId) {
+async function setPaymentFlag(dealId, recipient, paid, date, userId, na = false) {
   const map = {
     closer: ['closer_paid', 'closer_paid_date'],
     setter: ['setter_paid', 'setter_paid_date'],
@@ -434,7 +434,12 @@ async function setPaymentFlag(dealId, recipient, paid, date, userId) {
   } else {
     await run(`UPDATE deals SET ${flagField} = ?, updated_at = datetime('now') WHERE id = ?`, [paid ? 1 : 0, dealId]);
   }
-  await auditLog.logChange('deals', dealId, flagField, !paid, paid, userId, `Marked ${recipient} as ${paid ? 'paid' : 'unpaid'}`);
+  // N/A flag stored separately so it survives independently of the paid boolean
+  const current = await get(`SELECT payment_na_flags FROM deals WHERE id = ?`, [dealId]);
+  const flags = (() => { try { return JSON.parse(current.payment_na_flags || '{}'); } catch (e) { return {}; } })();
+  if (na) { flags[recipient] = true; } else { delete flags[recipient]; }
+  await run(`UPDATE deals SET payment_na_flags = ? WHERE id = ?`, [JSON.stringify(flags), dealId]);
+  await auditLog.logChange('deals', dealId, flagField, !paid, paid, userId, `Marked ${recipient} as ${na ? 'N/A' : paid ? 'paid' : 'unpaid'}`);
   return getDeal(dealId);
 }
 

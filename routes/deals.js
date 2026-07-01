@@ -155,8 +155,8 @@ router.post('/:id/approve', async (req, res) => {
 
 router.post('/:id/payment', async (req, res) => {
   try {
-    const { recipient, paid, date } = req.body;
-    const deal = await dealService.setPaymentFlag(req.params.id, recipient, !!paid, date, req.user.id);
+    const { recipient, paid, date, na } = req.body;
+    const deal = await dealService.setPaymentFlag(req.params.id, recipient, !!paid, date, req.user.id, !!na);
     res.json(deal);
   } catch (err) {
     res.status(400).json({ error: err.message });

@@ -69,7 +69,8 @@ const COLUMN_MIGRATIONS = [
   { table: 'deals', column: 'setter_calc_pay_scale_rate', definition: 'REAL' },
   { table: 'deals', column: 'setter_calc_rep_pool', definition: 'REAL' },
   { table: 'deals', column: 'setter_calc_below_floor', definition: 'INTEGER NOT NULL DEFAULT 0' },
-  { table: 'deals', column: 'pay_scale_id', definition: 'INTEGER REFERENCES pay_scales(id)' }
+  { table: 'deals', column: 'pay_scale_id', definition: 'INTEGER REFERENCES pay_scales(id)' },
+  { table: 'deals', column: 'payment_na_flags', definition: "TEXT NOT NULL DEFAULT '{}'" }
 ];
 
 async function columnExists(table, column) {
