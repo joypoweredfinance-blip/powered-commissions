@@ -105,6 +105,7 @@ async function loadReps() {
       <td>
         <button class="btn secondary small edit-profile-btn" data-id="${r.id}" style="width:auto;">Edit Profile</button>
         <button class="btn secondary small toggle-active-btn" data-id="${r.id}" data-active="${r.active}" style="width:auto;">${r.active ? 'Deactivate' : 'Reactivate'}</button>
+        <button class="btn danger small delete-rep-btn" data-id="${r.id}" data-name="${r.full_name}" style="width:auto;">Delete</button>
       </td>
     </tr>
     ${editPanelHtml(r)}
@@ -139,6 +140,15 @@ async function loadReps() {
     btn.addEventListener('click', async () => {
       try {
         await api('PUT', `/api/reps/${btn.dataset.id}`, { active: btn.dataset.active === '1' ? 0 : 1 });
+        loadReps();
+      } catch (e) { alert(e.message); }
+    });
+  });
+  document.querySelectorAll('.delete-rep-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm(`Permanently delete ${btn.dataset.name}? This cannot be undone.`)) return;
+      try {
+        await api('DELETE', `/api/reps/${btn.dataset.id}`);
         loadReps();
       } catch (e) { alert(e.message); }
     });

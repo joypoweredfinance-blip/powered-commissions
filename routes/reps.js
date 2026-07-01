@@ -72,6 +72,29 @@ router.post('/:id/create-login', async (req, res) => {
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
+router.delete('/:id', async (req, res) => {
+  try {
+    const rep = await get(`SELECT * FROM reps WHERE id = ?`, [req.params.id]);
+    if (!rep) return res.status(404).json({ error: 'Rep not found' });
+    const [deals, advances, clawbacks] = await Promise.all([
+      all(`SELECT id, customer_name FROM deals WHERE closer_rep_id = ? OR setter_rep_id = ? LIMIT 20`, [req.params.id, req.params.id]),
+      all(`SELECT id FROM advances WHERE rep_id = ? LIMIT 1`, [req.params.id]),
+      all(`SELECT id FROM clawbacks WHERE rep_id = ? LIMIT 1`, [req.params.id])
+    ]);
+    if (deals.length || advances.length || clawbacks.length) {
+      const parts = [];
+      if (deals.length) parts.push(`${deals.length} deal(s): ${deals.map((d) => d.customer_name || `#${d.id}`).join(', ')}`);
+      if (advances.length) parts.push('advances');
+      if (clawbacks.length) parts.push('clawbacks');
+      return res.status(409).json({ error: `Cannot delete ${rep.full_name} — they are attached to ${parts.join('; ')}. Remove them from all deals/advances/clawbacks first.` });
+    }
+    await run(`DELETE FROM users WHERE rep_id = ?`, [req.params.id]);
+    await run(`DELETE FROM reps WHERE id = ?`, [req.params.id]);
+    await auditLog.logChange('reps', req.params.id, 'deleted', rep.full_name, null, req.user.id, 'Rep profile permanently deleted');
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.post('/:id/reset-password', async (req, res) => {
   try {
     const rep = await get(`SELECT * FROM reps WHERE id = ?`, [req.params.id]);
