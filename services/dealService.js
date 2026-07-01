@@ -219,7 +219,11 @@ async function updateDeal(id, data, userId, reason = null) {
   // exception: they're commission-relevant the same way adders are, so saving one of them
   // auto-recalculates the Setter Calculator's outputs immediately, with no extra click needed.
   if (fields.some((f) => RECALC_TRIGGER_FIELDS.includes(f))) {
-    return recalculate(id, userId);
+    // Pass the already-read deal (with updates merged in) so recalculate() can skip its own
+    // duplicate SELECT — saves one Turso round trip on every setter-calc or pay-scale save.
+    const updatedDeal = { ...oldRow };
+    fields.forEach((f, i) => { updatedDeal[f] = values[i]; });
+    return recalculate(id, userId, { _deal: updatedDeal });
   }
   return getDeal(id);
 }
@@ -232,8 +236,10 @@ function parseFieldOverrideReasons(deal) {
   try { return JSON.parse(deal.field_override_reasons || '{}'); } catch (e) { return {}; }
 }
 
-async function recalculate(id, userId, { force = false } = {}) {
-  const deal = await get(`SELECT * FROM deals WHERE id = ?`, [id]);
+async function recalculate(id, userId, { force = false, _deal = null } = {}) {
+  // _deal: pre-read deal row passed from updateDeal to avoid a duplicate SELECT. Only safe
+  // when force=false (force clears override flags in the DB and needs a fresh read after).
+  let deal = (!force && _deal) ? _deal : await get(`SELECT * FROM deals WHERE id = ?`, [id]);
   if (!deal) throw new Error('Deal not found');
   // force clears every lock and recomputes the whole deal fresh; otherwise any individually
   // locked field (e.g. just Joey's bonus) is skipped while everything else still recalculates.

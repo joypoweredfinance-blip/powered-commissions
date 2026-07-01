@@ -143,9 +143,14 @@ async function saveSection(key) {
     document.querySelectorAll('.override-reason-input').forEach((inp) => { updatedReasons[inp.dataset.field] = inp.value; });
     data = { admin_notes: val('f_admin_notes'), field_override_reasons: JSON.stringify(updatedReasons) };
   }
-  try {
-    DEAL = await api('PUT', `/api/deals/${dealId}`, data);
-    EDITING.delete(key);
+
+  // Optimistically apply field values and close edit mode immediately — the UI feels
+  // instant. The server request runs in the background and the authoritative response
+  // (with computed fields, join names, audit log) is applied when it arrives.
+  const prevDeal = DEAL;
+  DEAL = { ...DEAL, ...data };
+  EDITING.delete(key);
+  function rerenderSection() {
     renderSectionById(key);
     if (key === 'project') {
       document.querySelector('.topbar h1').textContent = DEAL.customer_name;
@@ -155,8 +160,20 @@ async function saveSection(key) {
     }
     if (key === 'finance') renderCalc();
     if (key === 'milestones') renderCalc();
+  }
+  rerenderSection();
+
+  try {
+    const updated = await api('PUT', `/api/deals/${dealId}`, data);
+    DEAL = updated;
+    rerenderSection();
     renderAudit();
-  } catch (e) { alert(e.message); }
+  } catch (e) {
+    DEAL = prevDeal;
+    EDITING.add(key);
+    rerenderSection();
+    alert(e.message);
+  }
 }
 
 // --- Section renderers ---
