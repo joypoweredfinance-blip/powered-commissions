@@ -5,10 +5,13 @@ const auditLog = require('../services/auditLog');
 
 router.get('/', async (req, res) => {
   try {
-    const commissionSettings = await get(`SELECT * FROM commission_settings WHERE id = 1`);
-    const scales = await all(`SELECT * FROM pay_scales ORDER BY name`);
+    const [commissionSettings, scales, allTiers] = await Promise.all([
+      get(`SELECT * FROM commission_settings WHERE id = 1`),
+      all(`SELECT * FROM pay_scales ORDER BY name`),
+      all(`SELECT * FROM pay_scale_tiers ORDER BY pay_scale_id, net_ppw_threshold ASC`)
+    ]);
     for (const scale of scales) {
-      scale.tiers = await all(`SELECT * FROM pay_scale_tiers WHERE pay_scale_id = ? ORDER BY net_ppw_threshold ASC`, [scale.id]);
+      scale.tiers = allTiers.filter((t) => t.pay_scale_id === scale.id);
     }
     res.json({ commissionSettings, payScales: scales });
   } catch (err) { res.status(500).json({ error: err.message }); }

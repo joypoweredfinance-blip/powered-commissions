@@ -129,7 +129,7 @@ async function getDeal(id) {
   // roughly the time of the single slowest one. This runs on every deal-page load and every
   // mutation (override, recalculate, approve, etc., which all call getDeal() to return the
   // fresh state), so it's worth keeping fast.
-  const [deal, adders, advances, clawbacks, auditLogEntries, fileRows] = await Promise.all([
+  const [deal, adders, advances, clawbacks, auditLogEntries, fileRows, adderFileRows] = await Promise.all([
     get(`
       SELECT d.*, cr.full_name as closer_name, cr.display_name as closer_display, cr.pay_scale_id as closer_pay_scale_id,
              sr.full_name as setter_name, sr.display_name as setter_display,
@@ -156,20 +156,16 @@ async function getDeal(id) {
     // fetched by the dedicated download route, so attaching a large file never slows down every
     // load of this deal (or, on listDeals, every deal on the whole Board). At most one row per
     // slot, so this is at most 2 rows total.
-    all(`SELECT slot, id, file_name, file_type, file_size, uploaded_at FROM deal_estimate_files WHERE deal_id = ?`, [id])
+    all(`SELECT slot, id, file_name, file_type, file_size, uploaded_at FROM deal_estimate_files WHERE deal_id = ?`, [id]),
+    // Receipt/Proof metadata — joined through deal_adders so this can fire in the same parallel
+    // batch as the adders query itself, removing the previously sequential second round-trip.
+    all(`SELECT daf.adder_id, daf.id, daf.file_name, daf.file_type, daf.file_size, daf.uploaded_at
+         FROM deal_adder_files daf JOIN deal_adders da ON da.id = daf.adder_id WHERE da.deal_id = ?`, [id])
   ]);
   if (!deal) return null;
-  // Receipt/Proof metadata per adder — admin-only, batch-fetched (no N+1), file_data itself
-  // excluded here for the same reason as the deal-level estimate files above.
-  if (adders.length) {
-    const adderFileRows = await all(
-      `SELECT adder_id, id, file_name, file_type, file_size, uploaded_at FROM deal_adder_files WHERE adder_id IN (${adders.map(() => '?').join(',')})`,
-      adders.map((a) => a.id)
-    );
-    const fileByAdderId = {};
-    adderFileRows.forEach((row) => { fileByAdderId[row.adder_id] = row; });
-    adders.forEach((a) => { a.receiptFile = fileByAdderId[a.id] || null; });
-  }
+  const fileByAdderId = {};
+  adderFileRows.forEach((row) => { fileByAdderId[row.adder_id] = row; });
+  adders.forEach((a) => { a.receiptFile = fileByAdderId[a.id] || null; });
   const files = { estimate: null, final: null };
   for (const row of fileRows) {
     if (row.slot === 'estimate' || row.slot === 'final') files[row.slot] = row;

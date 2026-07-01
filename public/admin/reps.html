@@ -71,11 +71,12 @@ function editPanelHtml(r) {
             <div>
               <label>Pay Type</label>
               <select class="ed-pay-type">
-                <option value="commission" ${r.pay_type !== 'weekly' ? 'selected' : ''}>Commission (per deal)</option>
+                <option value="commission" ${r.pay_type === 'commission' || !r.pay_type ? 'selected' : ''}>Commission (per deal)</option>
                 <option value="weekly" ${r.pay_type === 'weekly' ? 'selected' : ''}>Weekly (flat amount)</option>
+                <option value="both" ${r.pay_type === 'both' ? 'selected' : ''}>Both (weekly + commission)</option>
               </select>
             </div>
-            <div class="ed-weekly-wrap" style="${r.pay_type === 'weekly' ? '' : 'display:none;'}">
+            <div class="ed-weekly-wrap" style="${r.pay_type === 'weekly' || r.pay_type === 'both' ? '' : 'display:none;'}">
               <label>Weekly Amount ($)</label><input type="number" step="0.01" class="ed-weekly-amount" value="${r.weekly_amount ?? ''}">
             </div>
           </div>
@@ -97,7 +98,7 @@ async function loadReps() {
   REPS = await api('GET', '/api/reps');
   document.getElementById('repsBody').innerHTML = REPS.map((r) => `
     <tr data-id="${r.id}">
-      <td><a href="/admin/rep-dashboard.html?id=${r.id}"><strong>${r.full_name}</strong></a>${r.display_name ? `<br><span style="color:var(--brand-muted); font-size:12px;">${r.display_name}</span>` : ''}${r.pay_type === 'weekly' ? '<br><span class="badge amber">Weekly Pay</span>' : ''}</td>
+      <td><a href="/admin/rep-dashboard.html?id=${r.id}"><strong>${r.full_name}</strong></a>${r.display_name ? `<br><span style="color:var(--brand-muted); font-size:12px;">${r.display_name}</span>` : ''}${r.pay_type === 'weekly' ? '<br><span class="badge amber">Weekly Pay</span>' : r.pay_type === 'both' ? '<br><span class="badge amber">Weekly + Commission</span>' : ''}</td>
       <td>${scaleSelect(r.id, r.pay_scale_id)}</td>
       <td>${r.login_email ? `<span class="badge green">${r.login_email}</span> <button class="btn secondary small reset-pw-btn" data-id="${r.id}" style="width:auto;">Reset Password</button>` : `<button class="btn secondary small create-login-btn" data-id="${r.id}" style="width:auto;">Create Login</button>`}</td>
       <td>${r.active ? '<span class="badge green">Active</span>' : '<span class="badge muted">Inactive</span>'}</td>
@@ -156,7 +157,7 @@ async function loadReps() {
   document.querySelectorAll('.ed-pay-type').forEach((sel) => {
     sel.addEventListener('change', () => {
       const wrap = sel.closest('.card').querySelector('.ed-weekly-wrap');
-      wrap.style.display = sel.value === 'weekly' ? '' : 'none';
+      wrap.style.display = sel.value === 'weekly' || sel.value === 'both' ? '' : 'none';
     });
   });
   document.querySelectorAll('.ed-save').forEach((btn) => {
