@@ -87,6 +87,9 @@ function renderSectionById(key) {
   else if (key === 'finance') renderSystemFinance();
   else if (key === 'milestones') renderMilestoneDates();
   else if (key === 'notes') renderAdminNotes();
+  else if (key === 'funds') renderFundsReceived();
+  else if (key === 'payment') renderPayment();
+  else if (key === 'estimate') renderOriginalEstimate();
 }
 
 async function saveSection(key) {
@@ -288,27 +291,31 @@ function renderSystemFinance() {
         <p class="section-title">System &amp; Finance</p>
         <button class="btn secondary small" onclick="startEdit('finance')" style="flex-shrink:0;">Edit</button>
       </div>
-      <div class="fd-grid">
-        ${fdi('Installer', installer ? dv(installer.name) : '—')}
-        ${fdi('Financier', financier ? dv(financier.name) : '—')}
-        ${fdi('Contract Value', dm(d.contract_value))}
-        ${fdi('EPC Rate ($/W)', d.epc_rate_per_watt != null ? `$${parseFloat(d.epc_rate_per_watt).toFixed(2)}/W` : '—')}
-        ${fdi('Monthly Payment', dm(d.monthly_payment))}
-        ${fdi('Cashback', dm(d.cashback_amount || 0))}
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0 24px; align-items:start;">
+        <div style="display:flex; flex-direction:column; gap:14px;">
+          ${fdi('System Size', d.system_size_kw != null ? `${d.system_size_kw} kW` : '—')}
+          ${fdi('Annual Production', d.annual_production_kwh != null ? `${d.annual_production_kwh} kWh` : '—')}
+          ${fdi('EPC Rate ($/W)', d.epc_rate_per_watt != null ? `$${parseFloat(d.epc_rate_per_watt).toFixed(2)}/W` : '—')}
+          ${fdi('Cashback', dm(d.cashback_amount || 0))}
+          ${fdi('Pay Split', d.pay_split != null ? `${(d.pay_split * 100).toFixed(0)}%` : '—')}
+        </div>
+        <div style="display:flex; flex-direction:column; gap:14px;">
+          ${fdi('Financier', financier ? dv(financier.name) : '—')}
+          ${fdi('Contract Value', dm(d.contract_value))}
+          ${fdi('Monthly Payment', dm(d.monthly_payment))}
+          ${fdi('Rate per kWh', d.rate_per_kwh != null ? parseFloat(d.rate_per_kwh).toFixed(3) : '—')}
+          ${fdi('Escalator', d.escalator_pct != null ? `${d.escalator_pct}%` : '—')}
+        </div>
+        <div style="display:flex; flex-direction:column; gap:14px;">
+          ${fdi('Installer', installer ? dv(installer.name) : '—')}
+          ${fdi('Panel Count', dv(d.panel_count))}
+          ${fdi('Panel Watts', dv(d.panel_watts))}
+          ${fdi('Module Type', dv(d.module_type))}
+          ${fdi('# Batteries', dv(d.num_batteries))}
+          ${fdi('Battery Type', dv(d.battery_type))}
+        </div>
       </div>
-      <div class="fd-grid cols-3" style="margin-top:14px;">
-        ${fdi('System Size', d.system_size_kw != null ? `${d.system_size_kw} kW` : '—')}
-        ${fdi('Panel Count', dv(d.panel_count))}
-        ${fdi('Panel Watts', dv(d.panel_watts))}
-        ${fdi('Annual Production', d.annual_production_kwh != null ? `${d.annual_production_kwh} kWh` : '—')}
-        ${fdi('Module Type', dv(d.module_type))}
-        ${fdi('Battery Type', dv(d.battery_type))}
-        ${fdi('# Batteries', dv(d.num_batteries))}
-        ${fdi('Rate per kWh', d.rate_per_kwh != null ? parseFloat(d.rate_per_kwh).toFixed(3) : '—')}
-        ${fdi('Escalator', d.escalator_pct != null ? `${d.escalator_pct}%` : '—')}
-        ${fdi('Pay Split', d.pay_split != null ? `${(d.pay_split * 100).toFixed(0)}%` : '—')}
-        ${fdi('Referral Deal', d.is_referral ? 'Yes (75%)' : 'No')}
-      </div>
+      ${d.is_referral ? `<p style="font-size:12px; color:var(--brand-muted); font-style:italic; margin-top:12px; margin-bottom:0;">Referral deal — 75% pay split</p>` : ''}
     </div>`;
   }
 }
@@ -349,6 +356,37 @@ function renderMilestoneDates() {
   }
 }
 
+const OVERRIDE_FIELD_LABELS = {
+  net_ppw: 'Net PPW',
+  gross_amount: 'Gross',
+  pay_scale_rate: 'Pay Scale Rate',
+  rep_pool: 'Rep Pool',
+  closer_pay_gross: 'Closer Pay (gross)',
+  closer_pay_net: 'Closer Pay (net)',
+  setter_calc_net_ppw: 'Setter Net PPW',
+  setter_calc_pay_scale_rate: 'Setter Pay Scale Rate',
+  setter_calc_rep_pool: 'Setter Rep Pool',
+  setter_pay: 'Setter Pay',
+  owner_etai_m1_amount: 'Etai — M1',
+  owner_etai_m2_amount: 'Etai — M2',
+  owner_noy_m1_amount: 'Noy — M1',
+  owner_noy_m2_amount: 'Noy — M2',
+  joey_m1_bonus: "Joey's Bonus — M1",
+  joey_m2_bonus: "Joey's Bonus — M2",
+  expected_m1_amount: 'Expected M1',
+  expected_m2_amount: 'Expected M2',
+};
+
+function overrideNotesHtml() {
+  const reasonsMap = (() => { try { return JSON.parse(DEAL.field_override_reasons || '{}'); } catch (e) { return {}; } })();
+  const entries = Object.entries(reasonsMap).filter(([, r]) => r);
+  if (!entries.length) return '';
+  return `<div style="margin-top:14px; border-top:1px solid var(--brand-border); padding-top:12px;">
+    <p style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--brand-muted); margin-bottom:8px;">Override Notes</p>
+    ${entries.map(([field, reason]) => `<div style="font-size:13px; margin-bottom:6px;"><span style="font-weight:600;">${OVERRIDE_FIELD_LABELS[field] || field}:</span> ${reason}</div>`).join('')}
+  </div>`;
+}
+
 function renderAdminNotes() {
   const d = DEAL;
   const el = document.getElementById('card-notes');
@@ -357,6 +395,7 @@ function renderAdminNotes() {
       <p class="section-title">Admin Notes <span style="font-weight:400; text-transform:none;">(never visible to reps)</span></p>
       <textarea id="f_admin_notes" rows="4">${(d.admin_notes || '').replace(/</g, '&lt;')}</textarea>
       ${sectionSaveBtns('notes')}
+      ${overrideNotesHtml()}
     </div>`;
   } else {
     el.innerHTML = `<div class="card" style="margin-bottom:20px;">
@@ -365,6 +404,7 @@ function renderAdminNotes() {
         <button class="btn secondary small" onclick="startEdit('notes')" style="flex-shrink:0;">Edit</button>
       </div>
       <div style="font-size:14px; white-space:pre-wrap; color:${d.admin_notes ? 'var(--brand-text)' : 'var(--brand-muted)'};">${d.admin_notes ? d.admin_notes.replace(/</g, '&lt;') : 'No notes yet.'}</div>
+      ${overrideNotesHtml()}
     </div>`;
   }
 }
@@ -377,7 +417,7 @@ function receiptRowHtml(a) {
       ? `<a href="/api/deals/${dealId}/adders/${a.id}/file" target="_blank" rel="noopener">${a.receiptFile.file_name}</a><button class="icon-btn a-receipt-remove" title="Remove" style="padding:0 4px;">✕</button>`
       : '<span style="color:var(--brand-muted);">No file attached</span>'}
     <input type="file" class="a-receipt-input" style="display:none;">
-    <button class="btn secondary small a-receipt-upload" style="width:auto; padding:6px 12px;">📎 ${a.receiptFile ? 'Replace' : 'Attach'}</button>
+    <button class="btn secondary small a-receipt-upload" style="width:auto; padding:2px 8px; font-size:11px;">📎 ${a.receiptFile ? 'Replace' : 'Attach'}</button>
   </div>`;
 }
 
@@ -639,38 +679,75 @@ function fieldOverrideReason(deal, field) {
   try { return JSON.parse(deal.field_override_reasons || '{}')[field] || null; } catch (e) { return null; }
 }
 
-function expectedAmountRow(label, amount, overrideField, reason) {
-  return `<div style="margin-bottom:6px;">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <span class="lbl" style="color:var(--brand-muted);">${label}</span>
-      <div style="display:flex; align-items:center; gap:8px;">
-        <input type="number" step="0.01" class="amount-override" data-field="${overrideField}" value="${amount ?? ''}" style="margin:0; max-width:130px;">
-        <button class="btn secondary small amount-save" data-field="${overrideField}" style="width:auto; padding:7px 14px;">Save</button>
-      </div>
-    </div>
-    ${reason ? `<div style="font-size:11px; color:var(--brand-muted); margin-top:2px;">Override reason: ${reason}</div>` : ''}
-  </div>`;
-}
-
 function renderFundsReceived() {
   const d = DEAL;
+  const editing = EDITING.has('funds');
+  const el = document.getElementById('card-funds');
   const totalReceived = (d.funds_received_m1 || 0) + (d.funds_received_m2 || 0);
-  document.getElementById('fundsReceivedBox').innerHTML = `
-    ${expectedAmountRow('Expected M1', d.expected_m1_amount, 'expected_m1_amount', fieldOverrideReason(d, 'expected_m1_amount'))}
+
+  if (!editing) {
+    el.innerHTML = `<div class="card" style="margin-bottom:20px;">
+      <div class="section-header">
+        <p class="section-title">Funds Received <span style="font-weight:400; text-transform:none; font-size:12px;">— money POWERED actually receives</span></p>
+        <button class="btn secondary small" onclick="startEdit('funds')" style="flex-shrink:0;">Edit</button>
+      </div>
+      <div class="fd-grid">
+        ${fdi('Expected M1', dm(d.expected_m1_amount))}
+        ${fdi('Funds Pending M1', dm(d.funds_pending_m1))}
+        ${fdi('Received M1', dm(d.funds_received_m1))}
+        ${fdi('Date Received M1', dd(d.funds_received_m1_date))}
+        ${fdi('Expected M2', dm(d.expected_m2_amount))}
+        ${fdi('Funds Pending M2', dm(d.funds_pending_m2))}
+        ${fdi('Received M2', dm(d.funds_received_m2))}
+        ${fdi('Date Received M2', dd(d.funds_received_m2_date))}
+      </div>
+      <div class="calc-line total" style="margin-top:12px;"><span class="lbl">Total Received</span><span class="val">${fmtMoney(totalReceived)}</span></div>
+    </div>`;
+    return;
+  }
+
+  const overrideReasonM1 = fieldOverrideReason(d, 'expected_m1_amount');
+  const overrideReasonM2 = fieldOverrideReason(d, 'expected_m2_amount');
+
+  el.innerHTML = `<div class="card" style="margin-bottom:20px;">
+    <p class="section-title">Funds Received <span style="font-weight:400; text-transform:none; font-size:12px;">— money POWERED actually receives</span></p>
+    <div style="margin-bottom:6px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span class="lbl" style="color:var(--brand-muted);">Expected M1</span>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <input type="number" step="0.01" class="amount-override" data-field="expected_m1_amount" value="${d.expected_m1_amount ?? ''}" style="margin:0; max-width:130px;">
+          <button class="btn secondary small amount-save" data-field="expected_m1_amount" style="width:auto; padding:2px 8px; font-size:11px;">Save</button>
+        </div>
+      </div>
+      ${overrideReasonM1 ? `<div style="font-size:11px; color:var(--brand-muted); margin-top:2px;">Override reason: ${overrideReasonM1}</div>` : ''}
+    </div>
     <div class="field-row" style="margin:6px 0 14px;">
       <div><label>Funds Pending M1 ($)</label><input type="number" step="0.01" id="fp_m1_amount" value="${d.funds_pending_m1 ?? ''}"></div>
       <div><label>Received M1 ($)</label><input type="number" step="0.01" id="fr_m1_amount" value="${d.funds_received_m1 ?? ''}"></div>
       <div><label>Date Received</label><input type="date" id="fr_m1_date" value="${(d.funds_received_m1_date || '').slice(0, 10)}"></div>
     </div>
-    ${expectedAmountRow('Expected M2', d.expected_m2_amount, 'expected_m2_amount', fieldOverrideReason(d, 'expected_m2_amount'))}
+    <div style="margin-bottom:6px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span class="lbl" style="color:var(--brand-muted);">Expected M2</span>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <input type="number" step="0.01" class="amount-override" data-field="expected_m2_amount" value="${d.expected_m2_amount ?? ''}" style="margin:0; max-width:130px;">
+          <button class="btn secondary small amount-save" data-field="expected_m2_amount" style="width:auto; padding:2px 8px; font-size:11px;">Save</button>
+        </div>
+      </div>
+      ${overrideReasonM2 ? `<div style="font-size:11px; color:var(--brand-muted); margin-top:2px;">Override reason: ${overrideReasonM2}</div>` : ''}
+    </div>
     <div class="field-row" style="margin:6px 0 14px;">
       <div><label>Funds Pending M2 ($)</label><input type="number" step="0.01" id="fp_m2_amount" value="${d.funds_pending_m2 ?? ''}"></div>
       <div><label>Received M2 ($)</label><input type="number" step="0.01" id="fr_m2_amount" value="${d.funds_received_m2 ?? ''}"></div>
       <div><label>Date Received</label><input type="date" id="fr_m2_date" value="${(d.funds_received_m2_date || '').slice(0, 10)}"></div>
     </div>
     <div class="calc-line total"><span class="lbl">Total Received</span><span class="val">${fmtMoney(totalReceived)}</span></div>
-    <button class="btn secondary small" id="saveFundsBtn" style="width:auto; margin-top:10px;">Save Funds Pending / Received</button>
-  `;
+    <div style="display:flex; gap:8px; margin-top:12px;">
+      <button class="btn small" id="saveFundsBtn" style="width:auto;">Save</button>
+      <button class="btn secondary small" onclick="cancelEdit('funds')" style="width:auto;">Cancel</button>
+    </div>
+  </div>`;
+
   document.getElementById('saveFundsBtn').addEventListener('click', async (e) => {
     const btn = e.target; btn.disabled = true; btn.textContent = 'Saving…';
     try {
@@ -679,10 +756,11 @@ function renderFundsReceived() {
         funds_received_m1: numOrNull(val('fr_m1_amount')), funds_received_m1_date: val('fr_m1_date') || null,
         funds_received_m2: numOrNull(val('fr_m2_amount')), funds_received_m2_date: val('fr_m2_date') || null
       });
+      EDITING.delete('funds');
       renderFundsReceived();
-    } catch (err) { alert(err.message); }
-    btn.disabled = false; btn.textContent = 'Save Funds Pending / Received';
+    } catch (err) { alert(err.message); btn.disabled = false; btn.textContent = 'Save'; }
   });
+
   wireAmountOverrideButtons();
 }
 
@@ -707,7 +785,7 @@ function renderEstimateFileSlot(slot) {
   const fileInputId = `fileInput_${slot}`;
   box.insertAdjacentHTML('beforeend', `<div style="margin-top:8px;">
     <input type="file" id="${fileInputId}" style="display:none;">
-    <button class="btn secondary small" id="${uploadBtnId}" style="width:auto;">📎 ${f ? 'Replace File' : 'Attach File'}</button>
+    <button class="btn secondary small" id="${uploadBtnId}" style="width:auto; padding:2px 8px; font-size:11px;">📎 ${f ? 'Replace File' : 'Attach File'}</button>
   </div>`);
   const uploadBtn = document.getElementById(uploadBtnId);
   const fileInput = document.getElementById(fileInputId);
@@ -731,16 +809,44 @@ function renderEstimateFileSlot(slot) {
 }
 
 function renderOriginalEstimate() {
-  const input = document.getElementById('f_original_estimate_amount');
-  if (input) input.value = DEAL.original_estimate_amount ?? '';
-  document.getElementById('saveOriginalEstimateBtn').addEventListener('click', async (e) => {
-    const btn = e.target; btn.disabled = true;
-    try {
-      DEAL = await api('PUT', `/api/deals/${dealId}`, { original_estimate_amount: numOrNull(val('f_original_estimate_amount')) });
-      btn.textContent = 'Saved ✓';
-      setTimeout(() => { if (document.body.contains(btn)) { btn.textContent = 'Save'; btn.disabled = false; } }, 1200);
-    } catch (err) { alert(err.message); btn.disabled = false; }
-  });
+  const el = document.getElementById('estimateField');
+  if (!el) return;
+  const d = DEAL;
+  const editing = EDITING.has('estimate');
+
+  if (editing) {
+    el.innerHTML = `
+      <label>Original Commission Calculator Estimate ($) <span style="font-weight:400; color:var(--brand-muted); font-size:12px;">— just for comparison, never used in any calculation</span></label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input type="number" step="0.01" id="f_original_estimate_amount" value="${d.original_estimate_amount ?? ''}" style="margin:0;">
+        <button class="btn small" id="saveOriginalEstimateBtn" style="width:auto;">Save</button>
+        <button class="btn secondary small" onclick="cancelEdit('estimate')" style="width:auto;">Cancel</button>
+      </div>
+      <div style="margin-top:12px;"><label style="font-size:12px;">1 — Estimate</label><div id="fileBox_estimate"></div></div>
+      <div style="margin-top:12px;"><label style="font-size:12px;">2 — Final</label><div id="fileBox_final"></div></div>
+    `;
+    document.getElementById('saveOriginalEstimateBtn').addEventListener('click', async (e) => {
+      const btn = e.target; btn.disabled = true;
+      try {
+        DEAL = await api('PUT', `/api/deals/${dealId}`, { original_estimate_amount: numOrNull(val('f_original_estimate_amount')) });
+        EDITING.delete('estimate');
+        renderOriginalEstimate();
+      } catch (err) { alert(err.message); btn.disabled = false; }
+    });
+  } else {
+    const hasValue = d.original_estimate_amount != null;
+    el.innerHTML = `
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
+        <div>
+          <label>Original Commission Calculator Estimate <span style="font-weight:400; color:var(--brand-muted); font-size:12px;">— just for comparison, never used in any calculation</span></label>
+          <div style="font-size:16px; font-weight:600; color:${hasValue ? 'var(--brand-text)' : 'var(--brand-muted)'}; margin-top:4px;">${hasValue ? fmtMoney(d.original_estimate_amount) : '— Not set —'}</div>
+        </div>
+        <button class="btn secondary small" onclick="startEdit('estimate')" style="flex-shrink:0;">Edit</button>
+      </div>
+      <div style="margin-top:12px;"><label style="font-size:12px;">1 — Estimate</label><div id="fileBox_estimate"></div></div>
+      <div style="margin-top:12px;"><label style="font-size:12px;">2 — Final</label><div id="fileBox_final"></div></div>
+    `;
+  }
   renderEstimateFileSlot('estimate');
   renderEstimateFileSlot('final');
 }
@@ -772,35 +878,9 @@ async function setApproval(role, approved) {
   try { DEAL = await api('POST', `/api/deals/${dealId}/approve`, { role, approved }); renderApproval(); } catch (e) { alert(e.message); }
 }
 
-function paymentRow(label, recipient, paid, amount, paidDate) {
-  return `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--brand-border); flex-wrap:wrap; gap:6px;">
-    <div><strong>${label}</strong> ${amount !== undefined ? `— ${fmtMoney(amount)}` : ''}</div>
-    <div style="display:flex; align-items:center; gap:10px;">
-      <input type="date" class="pay-date" data-recipient="${recipient}" value="${(paidDate || '').slice(0, 10)}" style="margin:0; padding:6px 8px; ${paid ? '' : 'display:none;'}">
-      <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" class="pay-toggle" data-recipient="${recipient}" ${paid ? 'checked' : ''} style="width:auto;"> Paid</label>
-    </div>
-  </div>`;
-}
-
-function editableAmountRow(label, recipient, paid, amount, paidDate, overrideField, reason) {
-  return `<div style="padding:10px 0; border-bottom:1px solid var(--brand-border);">
-    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
-      <strong>${label}</strong>
-      <div style="display:flex; align-items:center; gap:10px;">
-        <input type="date" class="pay-date" data-recipient="${recipient}" value="${(paidDate || '').slice(0, 10)}" style="margin:0; padding:6px 8px; ${paid ? '' : 'display:none;'}">
-        <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" class="pay-toggle" data-recipient="${recipient}" ${paid ? 'checked' : ''} style="width:auto;"> Paid</label>
-      </div>
-    </div>
-    <div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
-      <input type="number" step="0.01" class="amount-override" data-field="${overrideField}" value="${amount ?? ''}" style="margin:0; max-width:140px;">
-      <button class="btn secondary small amount-save" data-field="${overrideField}" style="width:auto; padding:7px 14px;">Save</button>
-    </div>
-    ${reason ? `<div style="font-size:11px; color:var(--brand-muted); margin-top:2px;">Override reason: ${reason}</div>` : ''}
-  </div>`;
-}
-
 function wireAmountOverrideButtons() {
-  document.querySelectorAll('.amount-save').forEach((btn) => {
+  document.querySelectorAll('.amount-save:not([data-wired])').forEach((btn) => {
+    btn.dataset.wired = '1';
     btn.addEventListener('click', async () => {
       const field = btn.dataset.field;
       const input = document.querySelector(`.amount-override[data-field="${field}"]`);
@@ -819,17 +899,58 @@ function wireAmountOverrideButtons() {
 
 function renderPayment() {
   const d = DEAL;
-  let html = '';
-  if (d.closer_rep_id) html += paymentRow('Closer', 'closer', d.closer_paid, d.closer_pay_net, d.closer_paid_date);
-  if (d.setter_rep_id) html += paymentRow('Setter', 'setter', d.setter_paid, d.setter_pay, d.setter_paid_date);
-  html += `<p class="section-title" style="margin-top:16px;">Internal Payroll (admin only) <span style="font-weight:400; text-transform:none; font-size:12px;">— amounts are editable, click Save to override</span></p>`;
-  html += editableAmountRow('Etai — M1', 'owner_etai_m1', d.owner_etai_m1_paid, d.owner_etai_m1_amount, d.owner_etai_m1_paid_date, 'owner_etai_m1_amount', fieldOverrideReason(d, 'owner_etai_m1_amount'));
-  html += editableAmountRow('Etai — M2', 'owner_etai_m2', d.owner_etai_m2_paid, d.owner_etai_m2_amount, d.owner_etai_m2_paid_date, 'owner_etai_m2_amount', fieldOverrideReason(d, 'owner_etai_m2_amount'));
-  html += editableAmountRow('Noy — M1', 'owner_noy_m1', d.owner_noy_m1_paid, d.owner_noy_m1_amount, d.owner_noy_m1_paid_date, 'owner_noy_m1_amount', fieldOverrideReason(d, 'owner_noy_m1_amount'));
-  html += editableAmountRow('Noy — M2', 'owner_noy_m2', d.owner_noy_m2_paid, d.owner_noy_m2_amount, d.owner_noy_m2_paid_date, 'owner_noy_m2_amount', fieldOverrideReason(d, 'owner_noy_m2_amount'));
-  html += editableAmountRow("Joey's Bonus — M1", 'joey_m1', d.joey_m1_paid, d.joey_m1_bonus, d.joey_m1_paid_date, 'joey_m1_bonus', fieldOverrideReason(d, 'joey_m1_bonus'));
-  html += editableAmountRow("Joey's Bonus — M2", 'joey', d.joey_paid, d.joey_m2_bonus, d.joey_paid_date, 'joey_m2_bonus', fieldOverrideReason(d, 'joey_m2_bonus'));
-  document.getElementById('paymentBox').innerHTML = html;
+  const editing = EDITING.has('payment');
+  const el = document.getElementById('card-payment');
+
+  function payLine(label, recipient, paid, amount, paidDate) {
+    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--brand-border); flex-wrap:wrap; gap:6px;">
+      <div><strong>${label}</strong>${amount != null ? ` — ${dm(amount)}` : ''}</div>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <input type="date" class="pay-date" data-recipient="${recipient}" value="${(paidDate || '').slice(0, 10)}" style="margin:0; padding:6px 8px;${paid ? '' : ' display:none;'}">
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" class="pay-toggle" data-recipient="${recipient}" ${paid ? 'checked' : ''} style="width:auto;"> Paid</label>
+      </div>
+    </div>`;
+  }
+
+  function internalLine(label, recipient, paid, amount, paidDate, overrideField, reason) {
+    const overrideHtml = editing
+      ? `<div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
+           <input type="number" step="0.01" class="amount-override" data-field="${overrideField}" value="${amount ?? ''}" style="margin:0; max-width:140px;">
+           <button class="btn secondary small amount-save" data-field="${overrideField}" style="width:auto; padding:2px 8px; font-size:11px;">Save</button>
+         </div>
+         ${reason ? `<div style="font-size:11px; color:var(--brand-muted); margin-top:2px;">Override reason: ${reason}</div>` : ''}`
+      : '';
+    return `<div style="padding:10px 0; border-bottom:1px solid var(--brand-border);">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+        <div><strong>${label}</strong>${amount != null ? ` — ${dm(amount)}` : ''}</div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <input type="date" class="pay-date" data-recipient="${recipient}" value="${(paidDate || '').slice(0, 10)}" style="margin:0; padding:6px 8px;${paid ? '' : ' display:none;'}">
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" class="pay-toggle" data-recipient="${recipient}" ${paid ? 'checked' : ''} style="width:auto;"> Paid</label>
+        </div>
+      </div>
+      ${overrideHtml}
+    </div>`;
+  }
+
+  let html = editing
+    ? `<div class="card" style="margin-bottom:20px;"><p class="section-title">Payment Status</p>`
+    : `<div class="card" style="margin-bottom:20px;"><div class="section-header"><p class="section-title">Payment Status</p><button class="btn secondary small" onclick="startEdit('payment')" style="flex-shrink:0;">Edit Amounts</button></div>`;
+
+  if (d.closer_rep_id) html += payLine('Closer', 'closer', d.closer_paid, d.closer_pay_net, d.closer_paid_date);
+  if (d.setter_rep_id) html += payLine('Setter', 'setter', d.setter_paid, d.setter_pay, d.setter_paid_date);
+  html += `<p class="section-title" style="margin-top:16px;">Internal Payroll <span style="font-weight:400; text-transform:none; font-size:12px;">(admin only)${editing ? ' — click Save on each row to override' : ''}</span></p>`;
+  html += internalLine('Etai — M1', 'owner_etai_m1', d.owner_etai_m1_paid, d.owner_etai_m1_amount, d.owner_etai_m1_paid_date, 'owner_etai_m1_amount', fieldOverrideReason(d, 'owner_etai_m1_amount'));
+  html += internalLine('Etai — M2', 'owner_etai_m2', d.owner_etai_m2_paid, d.owner_etai_m2_amount, d.owner_etai_m2_paid_date, 'owner_etai_m2_amount', fieldOverrideReason(d, 'owner_etai_m2_amount'));
+  html += internalLine('Noy — M1', 'owner_noy_m1', d.owner_noy_m1_paid, d.owner_noy_m1_amount, d.owner_noy_m1_paid_date, 'owner_noy_m1_amount', fieldOverrideReason(d, 'owner_noy_m1_amount'));
+  html += internalLine('Noy — M2', 'owner_noy_m2', d.owner_noy_m2_paid, d.owner_noy_m2_amount, d.owner_noy_m2_paid_date, 'owner_noy_m2_amount', fieldOverrideReason(d, 'owner_noy_m2_amount'));
+  html += internalLine("Joey’s Bonus — M1", 'joey_m1', d.joey_m1_paid, d.joey_m1_bonus, d.joey_m1_paid_date, 'joey_m1_bonus', fieldOverrideReason(d, 'joey_m1_bonus'));
+  html += internalLine("Joey’s Bonus — M2", 'joey', d.joey_paid, d.joey_m2_bonus, d.joey_paid_date, 'joey_m2_bonus', fieldOverrideReason(d, 'joey_m2_bonus'));
+
+  if (editing) {
+    html += `<div style="display:flex; gap:8px; margin-top:16px;"><button class="btn secondary small" onclick="cancelEdit('payment')" style="width:auto;">Done</button></div>`;
+  }
+  html += `</div>`;
+  el.innerHTML = html;
 
   async function sendPayment(recipient, paid, date, checkboxEl, dateInputEl) {
     if (dateInputEl) dateInputEl.style.display = paid ? '' : 'none';
@@ -843,13 +964,13 @@ function renderPayment() {
     }
   }
 
-  document.querySelectorAll('.pay-toggle').forEach((box) => {
+  el.querySelectorAll('.pay-toggle').forEach((box) => {
     box.addEventListener('change', () => {
-      const dateInput = document.querySelector(`.pay-date[data-recipient="${box.dataset.recipient}"]`);
+      const dateInput = el.querySelector(`.pay-date[data-recipient="${box.dataset.recipient}"]`);
       sendPayment(box.dataset.recipient, box.checked, dateInput ? dateInput.value : null, box, dateInput);
     });
   });
-  document.querySelectorAll('.pay-date').forEach((input) => {
+  el.querySelectorAll('.pay-date').forEach((input) => {
     input.addEventListener('change', () => { sendPayment(input.dataset.recipient, true, input.value, null, input); });
   });
   wireAmountOverrideButtons();
@@ -1045,10 +1166,7 @@ function renderFull() {
           <button class="btn secondary small" id="addAdderBtn">+ Add Line Item</button>
         </div>
         <div id="card-milestones"></div>
-        <div class="card">
-          <p class="section-title">Payment Status</p>
-          <div id="paymentBox"></div>
-        </div>
+        <div id="card-payment"></div>
       </div>
       <div>
         <div class="card" style="margin-bottom:20px;">
@@ -1061,19 +1179,7 @@ function renderFull() {
           </div>
           <div id="closerOverrideForm" style="display:none; margin-top:14px; border-top:1px solid var(--brand-border); padding-top:14px;"></div>
           <div style="margin-top:14px; border-top:1px solid var(--brand-border); padding-top:14px;">
-            <label>Original Commission Calculator Estimate ($) <span style="font-weight:400; color:var(--brand-muted); font-size:12px;">— just for comparison, never used in any calculation</span></label>
-            <div style="display:flex; gap:8px;">
-              <input type="number" step="0.01" id="f_original_estimate_amount" style="margin:0;">
-              <button class="btn secondary small" id="saveOriginalEstimateBtn" style="width:auto;">Save</button>
-            </div>
-            <div style="margin-top:12px;">
-              <label style="font-size:12px;">1 — Estimate</label>
-              <div id="fileBox_estimate"></div>
-            </div>
-            <div style="margin-top:12px;">
-              <label style="font-size:12px;">2 — Final</label>
-              <div id="fileBox_final"></div>
-            </div>
+            <div id="estimateField"></div>
           </div>
         </div>
 
@@ -1088,10 +1194,7 @@ function renderFull() {
           <div id="setterOverrideForm" style="display:none; margin-top:14px; border-top:1px solid var(--brand-border); padding-top:14px;"></div>
         </div>
 
-        <div class="card" style="margin-bottom:20px;">
-          <p class="section-title">Funds Received <span style="font-weight:400; text-transform:none; font-size:12px;">— money POWERED actually receives from the installer</span></p>
-          <div id="fundsReceivedBox"></div>
-        </div>
+        <div id="card-funds"></div>
 
         <div class="card" style="margin-bottom:20px;">
           <p class="section-title">Approval Gate</p>
@@ -1119,7 +1222,6 @@ function renderFull() {
   renderMilestoneDates();
   renderAdminNotes();
   renderCalc();
-  renderFundsReceived();
   renderApproval();
   renderPayment();
   renderAudit();
